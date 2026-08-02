@@ -8,4 +8,28 @@ const copyButton = document.getElementById('copy-button');
 const clearButton = document.getElementById('clear-button');
 const statusMessage = document.getElementById('status-message');
 
-// 后续步骤将在此实现标题转换、结果复制、内容清空和状态提示。
+function transformHeadings(markdown, direction) {
+  return markdown.replace(/^#{1,6}(?= )/gm, (headingMarker) => {
+    if (direction === 'up') {
+      return headingMarker.length === 1
+        ? headingMarker
+        : headingMarker.slice(1);
+    }
+
+    if (direction === 'down') {
+      return headingMarker.length === 6
+        ? headingMarker
+        : `${headingMarker}#`;
+    }
+
+    return headingMarker;
+  });
+}
+
+promoteButton.addEventListener('click', () => {
+  markdownOutput.value = transformHeadings(markdownInput.value, 'up');
+});
+
+demoteButton.addEventListener('click', () => {
+  markdownOutput.value = transformHeadings(markdownInput.value, 'down');
+});
