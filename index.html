@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown Heading Tool</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="container">
+      <header class="page-header">
+        <h1>Markdown Heading Tool</h1>
+        <p>用于整体升级或降级 Markdown ATX 标题。</p>
+      </header>
+
+      <section class="editor" aria-label="Markdown 标题处理区">
+        <div class="text-panel">
+          <label for="markdown-input">Markdown 输入</label>
+          <textarea id="markdown-input" placeholder="在此输入 Markdown 内容"></textarea>
+        </div>
+
+        <div class="text-panel">
+          <label for="markdown-output">处理结果</label>
+          <textarea id="markdown-output" readonly></textarea>
+        </div>
+      </section>
+
+      <div class="actions" aria-label="操作按钮">
+        <button id="promote-button" type="button">升级一级</button>
+        <button id="demote-button" type="button">降级一级</button>
+        <button id="copy-button" type="button">复制结果</button>
+        <button id="clear-button" type="button">清空内容</button>
+      </div>
+
+      <p id="status-message" class="status" role="status" aria-live="polite"></p>
+    </main>
+
+    <script src="script.js"></script>
+  </body>
+</html>
