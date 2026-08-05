@@ -58,9 +58,43 @@ function transformHeadings(markdown, direction) {
 }
 
 promoteButton.addEventListener('click', () => {
+  if (!markdownInput.value) {
+    markdownOutput.value = '';
+    statusMessage.textContent = '请输入 Markdown 内容';
+    return;
+  }
+
   markdownOutput.value = transformHeadings(markdownInput.value, 'up');
+  statusMessage.textContent = '升级完成';
 });
 
 demoteButton.addEventListener('click', () => {
+  if (!markdownInput.value) {
+    markdownOutput.value = '';
+    statusMessage.textContent = '请输入 Markdown 内容';
+    return;
+  }
+
   markdownOutput.value = transformHeadings(markdownInput.value, 'down');
+  statusMessage.textContent = '降级完成';
+});
+
+copyButton.addEventListener('click', async () => {
+  if (!markdownOutput.value) {
+    statusMessage.textContent = '没有可复制的内容';
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(markdownOutput.value);
+    statusMessage.textContent = '已复制';
+  } catch (error) {
+    statusMessage.textContent = '复制失败，请手动选择并复制输出内容';
+  }
+});
+
+clearButton.addEventListener('click', () => {
+  markdownInput.value = '';
+  markdownOutput.value = '';
+  statusMessage.textContent = '';
 });
