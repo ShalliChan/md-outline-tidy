@@ -22,23 +22,6 @@
       </div>
     </div>
 
-    <div class="control-section mapping-section">
-      <span class="control-label">指定层级转换</span>
-      <div class="level-picker-row">
-        <span class="picker-label">原层级</span>
-        <div id="source-levels" class="level-strip" aria-label="选择原层级">
-          <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
-        </div>
-      </div>
-      <div class="level-picker-row">
-        <span class="picker-label">目标层级</span>
-        <div id="target-levels" class="level-strip" aria-label="选择目标层级">
-          <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
-        </div>
-      </div>
-      <p id="mapping-status" class="mapping-status">请选择原层级和目标层级。</p>
-    </div>
-
     <div class="control-section state-section">
       <span class="control-label">状态控制</span>
       <div class="control-group">
@@ -60,6 +43,21 @@
       <button id="structure-toggle" class="collapse-toggle" type="button" aria-expanded="true" aria-controls="analysis-content">收起</button>
     </div>
     <div id="analysis-content" class="analysis-content">
+      <div class="structure-mapping-bar" aria-label="指定层级转换">
+        <div class="tree-control-pane">
+          <span class="tree-control-label">源层级</span>
+          <div id="source-levels" class="level-strip" aria-label="选择源层级">
+            <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
+          </div>
+        </div>
+        <div class="tree-control-pane">
+          <span class="tree-control-label">目标层级</span>
+          <div id="target-levels" class="level-strip" aria-label="选择目标层级">
+            <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
+          </div>
+        </div>
+        <p id="mapping-status" class="mapping-status">请选择源层级和目标层级。</p>
+      </div>
       <div class="notice-area" aria-live="polite">
         <div id="risk-message" class="risk" role="alert" hidden></div>
         <p id="status-message" class="status" role="status"></p>

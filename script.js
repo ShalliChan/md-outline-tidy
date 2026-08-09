@@ -184,6 +184,15 @@ function ancestorPaths(levels) {
   });
 }
 
+function ancestorContinuations(paths) {
+  return paths.map(function (path, rowIndex) {
+    var nextPath = paths[rowIndex + 1] || [];
+    return path.map(function (present, axisIndex) {
+      return Boolean(present && nextPath[axisIndex]);
+    });
+  });
+}
+
 function findRisks(model) {
   var risks = [];
   var stack = [];
@@ -219,6 +228,7 @@ var HeadingTool = {
   getSubtreeHeadingIds: getSubtreeHeadingIds,
   changeSubtree: changeSubtree,
   ancestorPaths: ancestorPaths,
+  ancestorContinuations: ancestorContinuations,
   findRisks: findRisks
 };
 
@@ -264,16 +274,17 @@ if (typeof document !== 'undefined') {
     lastImpact = null;
   }
 
-  function renderPath(path) {
+  function renderPath(path, continuations) {
     return '<span class="dot-path" style="--path-count:' + path.length + '" aria-label="' + path.map(function (present, index) {
       return 'H' + (index + 1) + (present ? ' 存在' : ' 缺失');
-    }).join('，') + '">' + path.map(function (present) {
-      return '<span class="path-dot ' + (present ? 'present' : 'missing') + '">' +
+    }).join('，') + '">' + path.map(function (present, index) {
+      return '<span class="path-dot ' + (present ? 'present' : 'missing') +
+        (continuations[index] ? ' path-continues' : ' path-ends') + '">' +
         (present ? '●' : '○') + '</span>';
     }).join('') + '</span>';
   }
 
-  function outlineCell(text, level, path, changed, headingId, withActions, impactClass, continues) {
+  function outlineCell(text, level, path, pathContinuations, changed, headingId, withActions, impactClass, continues) {
     var actions = withActions
       ? '<span class="branch-actions"><button type="button" data-action="subtree-up" data-heading-id="' + headingId +
         '" title="当前标题及子树提升一级" aria-label="提升“' + text + '”及其子树">↑</button>' +
@@ -282,7 +293,7 @@ if (typeof document !== 'undefined') {
       : '';
     return '<div class="outline-cell level-' + level + (changed ? ' is-changed' : '') +
       (impactClass ? ' ' + impactClass : '') +
-      '"><div class="outline-node">' + renderPath(path) +
+      '"><div class="outline-node">' + renderPath(path, pathContinuations) +
       '<span class="current-node' + (continues ? ' continues' : '') + '" aria-hidden="true"></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
       '<span class="level-name">H' + level + '</span>' + actions + '</div></div>';
@@ -314,6 +325,8 @@ if (typeof document !== 'undefined') {
       var afterLevels = state.headings.map(function (heading) { return targetLevel(state, heading); });
       var beforePaths = ancestorPaths(beforeLevels);
       var afterPaths = ancestorPaths(afterLevels);
+      var beforePathContinuations = ancestorContinuations(beforePaths);
+      var afterPathContinuations = ancestorContinuations(afterPaths);
       structure.innerHTML = '<div class="outline-header"><span>当前基准 / 转换前</span><span>当前结果 / 转换后</span></div>' +
         '<ol class="outline-rows">' + state.headings.map(function (heading, index) {
           var target = afterLevels[index];
@@ -326,8 +339,8 @@ if (typeof document !== 'undefined') {
           var beforeContinues = Boolean(beforePaths[index + 1] && beforePaths[index + 1][heading.level - 1]);
           var afterContinues = Boolean(afterPaths[index + 1] && afterPaths[index + 1][target - 1]);
           return '<li class="outline-row">' +
-            outlineCell(text, heading.level, beforePaths[index], false, heading.id, false, beforeImpact, beforeContinues) +
-            outlineCell(text, target, afterPaths[index], changed, heading.id, true, afterImpact, afterContinues) + '</li>';
+            outlineCell(text, heading.level, beforePaths[index], beforePathContinuations[index], false, heading.id, false, beforeImpact, beforeContinues) +
+            outlineCell(text, target, afterPaths[index], afterPathContinuations[index], changed, heading.id, true, afterImpact, afterContinues) + '</li>';
         }).join('') + '</ol>';
     }
 
@@ -379,6 +392,8 @@ if (typeof document !== 'undefined') {
   function handleLevelChoice(side, event) {
     var button = event.target.closest('button[data-level]');
     if (!button) return;
+    var scrollX = window.scrollX;
+    var scrollY = window.scrollY;
     var range = currentRange();
     setMappingChoice(state, side, Number(button.dataset.level), range);
     if (state.mappingSource === null) {
@@ -387,6 +402,7 @@ if (typeof document !== 'undefined') {
       setImpact('mapping', mappingAffectedHeadingIds(state));
     }
     render();
+    window.scrollTo(scrollX, scrollY);
     setStatus(mappingIsActive(state) ? '指定层级转换已实时生效' : '指定层级转换当前未生效');
   }
 

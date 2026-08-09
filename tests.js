@@ -141,6 +141,8 @@
   deepEqual('V3: dot path document starts at H3', tool.ancestorPaths([3]), [[false, false]]);
   deepEqual('V3: new H1 branch clears old H2 ancestor', tool.ancestorPaths([1, 2, 1, 3]), [[], [true], [], [true, false]]);
   deepEqual('V4: shallower H3 keeps valid H1 and H2 ancestors', tool.ancestorPaths([1, 2, 4, 3]), [[], [true], [true, true, false], [true, true]]);
+  deepEqual('V6: ancestor line continues only into connected next row', tool.ancestorContinuations(tool.ancestorPaths([1, 2, 3])), [[], [true], [false, false]]);
+  deepEqual('V6: ancestor line ends before a new root branch', tool.ancestorContinuations(tool.ancestorPaths([1, 2, 1])), [[], [false], []]);
 
   var selectionSubtree = tool.createState('## A\n### B\n## C');
   var thirdStart = selectionSubtree.baseline.indexOf('## C');
