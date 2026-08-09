@@ -79,8 +79,20 @@ function mappingIsActive(model) {
   return model.mappingSource !== null && model.mappingTarget !== null && model.mappingRange !== null;
 }
 
+function adjustedLevelBeforeMapping(model, heading) {
+  return clampLevel(heading.level + model.offsets[heading.id]);
+}
+
+function mappingAffectedHeadingIds(model) {
+  if (model.mappingSource === null || model.mappingRange === null) return [];
+  return model.headings.filter(function (heading) {
+    return headingInRange(heading, model.mappingRange) &&
+      adjustedLevelBeforeMapping(model, heading) === model.mappingSource;
+  }).map(function (heading) { return heading.id; });
+}
+
 function targetLevel(model, heading) {
-  var level = clampLevel(heading.level + model.offsets[heading.id]);
+  var level = adjustedLevelBeforeMapping(model, heading);
   if (mappingIsActive(model) && headingInRange(heading, model.mappingRange) && level === model.mappingSource) {
     return model.mappingTarget;
   }
@@ -193,6 +205,8 @@ var HeadingTool = {
   establishBaseline: establishBaseline,
   headingInRange: headingInRange,
   mappingIsActive: mappingIsActive,
+  adjustedLevelBeforeMapping: adjustedLevelBeforeMapping,
+  mappingAffectedHeadingIds: mappingAffectedHeadingIds,
   targetLevel: targetLevel,
   renderMarkdown: renderMarkdown,
   transformHeadings: transformHeadings,
@@ -224,6 +238,7 @@ if (typeof document !== 'undefined') {
   var sourceLevels = document.getElementById('source-levels');
   var targetLevels = document.getElementById('target-levels');
   var state = createState('');
+  var lastImpact = null;
 
   function escapeHtml(value) {
     return value.replace(/[&<>"']/g, function (character) {
@@ -241,6 +256,14 @@ if (typeof document !== 'undefined') {
     statusMessage.textContent = message;
   }
 
+  function setImpact(type, ids) {
+    lastImpact = { type: type, ids: ids.slice() };
+  }
+
+  function clearImpact() {
+    lastImpact = null;
+  }
+
   function renderPath(path) {
     return '<span class="dot-path" style="--path-count:' + path.length + '" aria-label="' + path.map(function (present, index) {
       return 'H' + (index + 1) + (present ? ' 存在' : ' 缺失');
@@ -250,7 +273,7 @@ if (typeof document !== 'undefined') {
     }).join('') + '</span>';
   }
 
-  function outlineCell(text, level, path, changed, headingId, withActions) {
+  function outlineCell(text, level, path, changed, headingId, withActions, impactClass, continues) {
     var actions = withActions
       ? '<span class="branch-actions"><button type="button" data-action="subtree-up" data-heading-id="' + headingId +
         '" title="当前标题及子树提升一级" aria-label="提升“' + text + '”及其子树">↑</button>' +
@@ -258,8 +281,9 @@ if (typeof document !== 'undefined') {
         '" title="当前标题及子树降低一级" aria-label="降低“' + text + '”及其子树">↓</button></span>'
       : '';
     return '<div class="outline-cell level-' + level + (changed ? ' is-changed' : '') +
+      (impactClass ? ' ' + impactClass : '') +
       '"><div class="outline-node">' + renderPath(path) +
-      '<span class="current-node" aria-hidden="true"></span>' +
+      '<span class="current-node' + (continues ? ' continues' : '') + '" aria-hidden="true"></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
       '<span class="level-name">H' + level + '</span>' + actions + '</div></div>';
   }
@@ -295,9 +319,15 @@ if (typeof document !== 'undefined') {
           var target = afterLevels[index];
           var changed = target !== heading.level;
           var text = escapeHtml(heading.text || '（空标题）');
+          var affected = lastImpact && lastImpact.ids.indexOf(heading.id) !== -1;
+          var beforeImpact = affected ? 'impact impact-' + lastImpact.type + ' impact-before' : '';
+          var showResultImpact = affected && (lastImpact.type !== 'mapping' || mappingIsActive(state));
+          var afterImpact = showResultImpact ? 'impact impact-' + lastImpact.type + ' impact-after' : '';
+          var beforeContinues = Boolean(beforePaths[index + 1] && beforePaths[index + 1][heading.level - 1]);
+          var afterContinues = Boolean(afterPaths[index + 1] && afterPaths[index + 1][target - 1]);
           return '<li class="outline-row">' +
-            outlineCell(text, heading.level, beforePaths[index], false, heading.id, false) +
-            outlineCell(text, target, afterPaths[index], changed, heading.id, true) + '</li>';
+            outlineCell(text, heading.level, beforePaths[index], false, heading.id, false, beforeImpact, beforeContinues) +
+            outlineCell(text, target, afterPaths[index], changed, heading.id, true, afterImpact, afterContinues) + '</li>';
         }).join('') + '</ol>';
     }
 
@@ -325,16 +355,25 @@ if (typeof document !== 'undefined') {
 
   input.addEventListener('input', function () {
     state = createState(input.value);
+    clearImpact();
     render();
     setStatus(state.headings.length ? '已根据新输入建立新的 Original 和 Baseline' : '');
   });
 
+  function operateOverall(delta, range) {
+    var ids = state.headings.filter(function (heading) {
+      return headingInRange(heading, range);
+    }).map(function (heading) { return heading.id; });
+    changeOverall(state, delta, range);
+    setImpact('overall', ids);
+  }
+
   document.getElementById('promote-button').addEventListener('click', function () {
-    operate(function (range) { changeOverall(state, -1, range); }, '已整体提升一级', '已提升选区内标题');
+    operate(function (range) { operateOverall(-1, range); }, '已整体提升一级', '已提升选区内标题');
   });
 
   document.getElementById('demote-button').addEventListener('click', function () {
-    operate(function (range) { changeOverall(state, 1, range); }, '已整体降低一级', '已降低选区内标题');
+    operate(function (range) { operateOverall(1, range); }, '已整体降低一级', '已降低选区内标题');
   });
 
   function handleLevelChoice(side, event) {
@@ -342,9 +381,12 @@ if (typeof document !== 'undefined') {
     if (!button) return;
     var range = currentRange();
     setMappingChoice(state, side, Number(button.dataset.level), range);
+    if (state.mappingSource === null) {
+      clearImpact();
+    } else {
+      setImpact('mapping', mappingAffectedHeadingIds(state));
+    }
     render();
-    input.focus();
-    if (range.selected) input.setSelectionRange(range.start, range.end);
     setStatus(mappingIsActive(state) ? '指定层级转换已实时生效' : '指定层级转换当前未生效');
   }
 
@@ -356,7 +398,9 @@ if (typeof document !== 'undefined') {
     if (!button) return;
     var headingId = Number(button.dataset.headingId);
     var delta = button.dataset.action === 'subtree-up' ? -1 : 1;
+    var ids = getSubtreeHeadingIds(state, headingId);
     changeSubtree(state, headingId, delta);
+    setImpact('subtree', ids);
     render();
     setStatus('已将“' + (state.headings[headingId].text || '空标题') + '”及其子树' +
       (delta < 0 ? '提升' : '降低') + '一级');
@@ -364,6 +408,7 @@ if (typeof document !== 'undefined') {
 
   document.getElementById('continue-button').addEventListener('click', function () {
     var result = commitResult(state);
+    clearImpact();
     input.value = result;
     input.setSelectionRange(0, 0);
     render();
@@ -373,6 +418,7 @@ if (typeof document !== 'undefined') {
 
   document.getElementById('reset-button').addEventListener('click', function () {
     var original = resetTransformations(state);
+    clearImpact();
     input.value = original;
     input.setSelectionRange(0, 0);
     render();
@@ -404,6 +450,7 @@ if (typeof document !== 'undefined') {
   document.getElementById('clear-button').addEventListener('click', function () {
     input.value = '';
     state = createState('');
+    clearImpact();
     render();
     setStatus('');
     input.focus();

@@ -119,6 +119,20 @@
   tool.setMappingChoice(choices, 'target', 4, full(choices));
   equal('V3: clicking active target also cancels conversion', tool.renderMarkdown(choices), '## A');
 
+  var mappingImpact = tool.createState('### A\n## B\n### C');
+  tool.setMappingChoice(mappingImpact, 'source', 3, full(mappingImpact));
+  deepEqual('V5: source-only selection records affected headings', tool.mappingAffectedHeadingIds(mappingImpact), [0, 2]);
+  tool.setMappingChoice(mappingImpact, 'target', 2, full(mappingImpact));
+  deepEqual('V5: H3 to H2 keeps corresponding affected set', tool.mappingAffectedHeadingIds(mappingImpact), [0, 2]);
+  equal('V5: H3 to H2 updates affected result levels', tool.renderMarkdown(mappingImpact), '## A\n## B\n## C');
+  tool.setMappingChoice(mappingImpact, 'target', 4, full(mappingImpact));
+  deepEqual('V5: changing H3 target keeps highlight correspondence', tool.mappingAffectedHeadingIds(mappingImpact), [0, 2]);
+  equal('V5: changing H3 target updates result in realtime', tool.renderMarkdown(mappingImpact), '#### A\n## B\n#### C');
+  tool.setMappingChoice(mappingImpact, 'target', 4, full(mappingImpact));
+  deepEqual('V5: target cancellation retains source-side affected set', tool.mappingAffectedHeadingIds(mappingImpact), [0, 2]);
+  tool.setMappingChoice(mappingImpact, 'source', 3, full(mappingImpact));
+  deepEqual('V5: source cancellation clears affected set', tool.mappingAffectedHeadingIds(mappingImpact), []);
+
   deepEqual('V3: dot path H1', tool.ancestorPaths([1]), [[]]);
   deepEqual('V3: dot path complete H1-H2-H3', tool.ancestorPaths([1, 2, 3]), [[], [true], [true, true]]);
   deepEqual('V3: dot path H1-H3 missing H2', tool.ancestorPaths([1, 3]), [[], [true, false]]);

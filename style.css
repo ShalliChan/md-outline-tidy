@@ -44,32 +44,45 @@ button, textarea { font: inherit; }
 .outline-header span { padding: 5px 9px; }
 .outline-header span + span, .outline-cell + .outline-cell { border-left: 1px solid #dfe3e8; }
 .outline-rows { margin: 0; padding: 0; overflow: visible; list-style: none; }
-.outline-row { min-height: 27px; border-top: 1px solid #f0f1f3; }
-.outline-cell { min-width: 0; padding: 2px 6px; --level-color: #607d8b; }
+.outline-row { min-height: 31px; border-top: 1px solid #eef0f2; }
+.outline-cell { position: relative; min-width: 0; padding: 2px 7px; --level-step: 24px; --level-color: #607d8b; }
 .outline-cell.level-1 { --level-color: #49627c; }
 .outline-cell.level-2 { --level-color: #307567; }
 .outline-cell.level-3 { --level-color: #416ea3; }
 .outline-cell.level-4 { --level-color: #7964a5; }
 .outline-cell.level-5 { --level-color: #9a6638; }
 .outline-cell.level-6 { --level-color: #995866; }
-.outline-node { display: flex; align-items: center; min-width: 0; min-height: 22px; }
+.outline-node { display: flex; align-items: center; min-width: 0; min-height: 26px; }
 
-.dot-path { display: inline-grid; grid-template-columns: repeat(5, 17px); flex: 0 0 auto; width: calc(var(--path-count, 0) * 17px); font-size: .67rem; line-height: 1; }
-.path-dot { display: inline-flex; position: relative; width: 17px; height: 22px; align-items: center; justify-content: center; }
-.path-dot::after { position: absolute; top: 10.5px; right: -2px; left: 10px; height: 1px; background: #cbd2d9; content: ""; }
-.path-dot.present { color: var(--level-color); }
-.path-dot.present::before { position: absolute; top: -4px; bottom: -4px; left: 8px; width: 1px; background: color-mix(in srgb, var(--level-color) 38%, #d7dde2); content: ""; }
-.path-dot.present { z-index: 0; }
-.path-dot.present::after { background: color-mix(in srgb, var(--level-color) 42%, #cbd2d9); }
-.path-dot.missing { color: #bcc3ca; }
-.path-dot.missing::after { background: repeating-linear-gradient(90deg, #ccd2d8 0 2px, transparent 2px 4px); }
-.current-node { position: relative; z-index: 1; flex: 0 0 auto; width: 7px; height: 7px; margin: 0 6px 0 1px; border: 1px solid var(--level-color); border-radius: 50%; background: #fff; box-shadow: inset 0 0 0 2px #fff; }
-.current-node::before { position: absolute; top: 2px; right: 6px; width: 9px; height: 1px; background: color-mix(in srgb, var(--level-color) 45%, #cbd2d9); content: ""; }
-.level-1 .current-node { background: var(--level-color); }
-.level-1 .current-node::before { display: none; }
-.outline-text { min-width: 0; overflow: hidden; color: #30343b; font-size: .79rem; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.dot-path { display: inline-grid; grid-template-columns: repeat(5, var(--level-step)); flex: 0 0 auto; width: calc(var(--path-count, 0) * var(--level-step)); height: 26px; font-size: 0; line-height: 1; }
+.path-dot { display: inline-flex; position: relative; width: var(--level-step); height: 26px; align-items: center; justify-content: center; color: transparent; }
+.path-dot::after { position: absolute; top: 12.5px; right: -1px; left: 12px; height: 1px; background: #aeb8c2; content: ""; }
+.path-dot::before { position: absolute; z-index: 1; top: 8px; left: 8px; width: 7px; height: 7px; border-radius: 50%; content: ""; }
+.path-dot.present::before { border: 1px solid #fff; background: var(--level-color); box-shadow: 0 0 0 1px var(--level-color); }
+.path-dot.present { background: linear-gradient(90deg, transparent 11.5px, color-mix(in srgb, var(--level-color) 48%, #b7c0c8) 11.5px 12.5px, transparent 12.5px); }
+.path-dot.present::after { background: color-mix(in srgb, var(--level-color) 58%, #aeb8c2); }
+.path-dot.missing::before { border: 2px solid #aeb6bf; background: #fff; }
+.path-dot.missing::after { background: repeating-linear-gradient(90deg, #aeb6bf 0 3px, transparent 3px 5px); }
+
+.current-node { position: relative; z-index: 1; flex: 0 0 auto; width: 10px; height: 10px; margin: 0 7px; border: 2px solid var(--level-color); border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px #fff; }
+.current-node::after { position: absolute; top: 3px; left: 8px; width: 8px; height: 1px; background: color-mix(in srgb, var(--level-color) 62%, #9eabb6); content: ""; }
+.current-node.continues::before { position: absolute; top: 8px; bottom: -12px; left: 3px; width: 1px; background: color-mix(in srgb, var(--level-color) 52%, #b7c0c8); content: ""; }
+.level-1 .current-node { width: 12px; height: 12px; margin-right: 6px; margin-left: 6px; border-width: 2px; background: var(--level-color); box-shadow: 0 0 0 2px #fff, 0 0 0 3px color-mix(in srgb, var(--level-color) 36%, transparent); }
+.level-1 .current-node::after { top: 4px; left: 10px; }
+.level-1 .current-node.continues::before { top: 10px; bottom: -11px; left: 4px; }
+
+.outline-text { min-width: 0; overflow: hidden; color: #30343b; font-size: .8rem; font-weight: 500; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
+.level-1 .outline-text { font-weight: 700; }
 .level-name { flex: 0 0 auto; margin-left: 5px; color: var(--level-color); font-size: .62rem; font-weight: 700; }
 .outline-cell.is-changed .level-name { text-decoration: underline; text-underline-offset: 2px; }
+
+.outline-cell.impact { background: color-mix(in srgb, var(--level-color) 9%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--level-color) 42%, transparent); }
+.outline-cell.impact::after { position: absolute; top: 3px; bottom: 3px; left: 2px; width: 3px; border-radius: 2px; background: var(--level-color); content: ""; }
+.outline-cell.impact-overall { background: color-mix(in srgb, #52789d 6%, #fff); box-shadow: inset 0 0 0 1px color-mix(in srgb, #52789d 22%, transparent); }
+.outline-cell.impact-overall::after { width: 2px; background: #6f8ba5; }
+.outline-cell.impact-subtree { background: color-mix(in srgb, var(--level-color) 12%, #fff); }
+.outline-cell.impact-mapping .outline-text { font-weight: 700; }
+
 .branch-actions { display: inline-flex; flex: 0 0 auto; gap: 2px; margin-left: 4px; opacity: .12; transition: opacity .15s ease; }
 .outline-cell:hover .branch-actions, .branch-actions:focus-within { opacity: 1; }
 .branch-actions button { width: 24px; min-height: 20px; padding: 0; border-color: #b8bec5; color: #4b5865; background: #fff; font-size: .75rem; line-height: 18px; }
