@@ -13,30 +13,6 @@
     <p>调整 Markdown ATX 标题层级，并实时检查文档结构。</p>
   </header>
 
-  <section class="controls" aria-label="标题转换设置">
-    <div class="control-section">
-      <span class="control-label">整体转换</span>
-      <div class="control-group">
-        <button id="promote-button" type="button">整体提升一级</button>
-        <button id="demote-button" type="button">整体降低一级</button>
-      </div>
-    </div>
-
-    <div class="control-section state-section">
-      <span class="control-label">状态控制</span>
-      <div class="control-group">
-        <button id="continue-button" class="primary-action" type="button">以当前结果继续</button>
-        <button id="reset-button" class="reset-action" type="button">重置转换</button>
-      </div>
-      <span class="control-label content-action-label">常用内容操作</span>
-      <div class="control-group">
-        <button id="copy-button" type="button">复制结果</button>
-        <button id="clear-button" type="button">清空内容</button>
-      </div>
-    </div>
-    <p class="selection-hint">输入框有选区时，整体和指定层级转换仅作用于选区中的标题；无选区时作用于全文。结构树中的箭头只调整对应分支。</p>
-  </section>
-
   <section id="analysis-panel" class="analysis" aria-labelledby="structure-title">
     <div class="analysis-heading">
       <div class="analysis-title"><h2 id="structure-title">标题结构</h2><span id="heading-count" class="badge">0 个标题</span></div>
@@ -47,7 +23,16 @@
         <div class="tree-control-pane">
           <span class="tree-control-label">源层级</span>
           <div id="source-levels" class="level-strip" aria-label="选择源层级">
-            <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
+            <span class="source-level-pair"><button type="button" data-level="1" data-source-mode="single">H1</button><button type="button" data-level="1" data-source-mode="and-below" aria-label="H1 及以下">H1+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="2" data-source-mode="single">H2</button><button type="button" data-level="2" data-source-mode="and-below" aria-label="H2 及以下">H2+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="3" data-source-mode="single">H3</button><button type="button" data-level="3" data-source-mode="and-below" aria-label="H3 及以下">H3+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="4" data-source-mode="single">H4</button><button type="button" data-level="4" data-source-mode="and-below" aria-label="H4 及以下">H4+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="5" data-source-mode="single">H5</button><button type="button" data-level="5" data-source-mode="and-below" aria-label="H5 及以下">H5+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="6" data-source-mode="single">H6</button><button type="button" data-level="6" data-source-mode="and-below" aria-label="H6 及以下">H6+</button></span>
+          </div>
+          <div class="quick-source-strip" aria-label="动态源层级">
+            <button id="lowest-level" type="button" data-quick-source="lowest">最低层级</button>
+            <button id="second-lowest-level" type="button" data-quick-source="second-lowest">倒数第二层级</button>
           </div>
         </div>
         <div class="tree-control-pane">
@@ -55,8 +40,22 @@
           <div id="target-levels" class="level-strip" aria-label="选择目标层级">
             <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
           </div>
+          <div id="preset-targets" class="preset-targets" aria-label="选择正文预设"></div>
         </div>
-        <p id="mapping-status" class="mapping-status">请选择源层级和目标层级。</p>
+        <div class="mapping-footer">
+          <p id="mapping-status" class="mapping-status">请选择源层级和目标层级。</p>
+          <div class="sticky-actions" aria-label="状态与内容操作">
+            <div class="sticky-action-group">
+              <button id="continue-button" class="primary-action" type="button">以当前结果继续</button>
+              <button id="reset-button" class="reset-action" type="button">重置转换</button>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div class="sticky-action-group">
+              <button id="copy-button" type="button">复制结果</button>
+              <button id="clear-button" type="button">清空内容</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="notice-area" aria-live="polite">
         <div id="risk-message" class="risk" role="alert" hidden></div>
@@ -66,9 +65,25 @@
     </div>
   </section>
 
+  <section class="utility-panel" aria-labelledby="cleanup-title">
+    <div class="utility-row">
+      <strong id="cleanup-title">文本整理</strong>
+      <button id="remove-breaks-button" type="button">删除分隔线</button>
+      <button id="compress-guide-lines-button" type="button">压缩引导行</button>
+    </div>
+  </section>
+
   <section class="editor" aria-label="Markdown 标题处理区">
     <div class="text-panel"><label for="markdown-input">当前基准 Markdown</label><textarea id="markdown-input" placeholder="在此输入 Markdown 内容" spellcheck="false"></textarea></div>
     <div class="text-panel"><label for="markdown-output">当前结果预览</label><textarea id="markdown-output" readonly aria-live="polite"></textarea></div>
+  </section>
+
+  <section class="preset-settings" aria-label="正文预设设置">
+    <details class="preset-manager">
+      <summary>管理正文预设</summary>
+      <div id="preset-editor"></div>
+      <button id="add-preset-button" type="button">新建预设</button>
+    </details>
   </section>
 </main>
 <script src="script.js"></script>
