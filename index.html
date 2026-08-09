@@ -1,40 +1,78 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markdown Heading Tool</title>
-    <link rel="stylesheet" href="style.css">
-  </head>
-  <body>
-    <main class="container">
-      <header class="page-header">
-        <h1>Markdown Heading Tool</h1>
-        <p>用于整体升级或降级 Markdown ATX 标题。</p>
-      </header>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Markdown Heading Tool V2</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="container">
+  <header class="page-header">
+    <h1>Markdown Heading Tool</h1>
+    <p>调整 Markdown ATX 标题层级，并实时检查文档结构。</p>
+  </header>
 
-      <section class="editor" aria-label="Markdown 标题处理区">
-        <div class="text-panel">
-          <label for="markdown-input">Markdown 输入</label>
-          <textarea id="markdown-input" placeholder="在此输入 Markdown 内容"></textarea>
+  <section class="controls" aria-label="标题转换设置">
+    <div class="control-section">
+      <span class="control-label">整体转换</span>
+      <div class="control-group">
+        <button id="promote-button" type="button">整体提升一级</button>
+        <button id="demote-button" type="button">整体降低一级</button>
+      </div>
+    </div>
+
+    <div class="control-section mapping-section">
+      <span class="control-label">指定层级转换</span>
+      <div class="level-picker-row">
+        <span class="picker-label">原层级</span>
+        <div id="source-levels" class="level-strip" aria-label="选择原层级">
+          <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
         </div>
-
-        <div class="text-panel">
-          <label for="markdown-output">处理结果</label>
-          <textarea id="markdown-output" readonly></textarea>
+      </div>
+      <div class="level-picker-row">
+        <span class="picker-label">目标层级</span>
+        <div id="target-levels" class="level-strip" aria-label="选择目标层级">
+          <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
         </div>
-      </section>
+      </div>
+      <p id="mapping-status" class="mapping-status">请选择原层级和目标层级。</p>
+    </div>
 
-      <div class="actions" aria-label="操作按钮">
-        <button id="promote-button" type="button">升级一级</button>
-        <button id="demote-button" type="button">降级一级</button>
+    <div class="control-section state-section">
+      <span class="control-label">状态控制</span>
+      <div class="control-group">
+        <button id="continue-button" class="primary-action" type="button">以当前结果继续</button>
+        <button id="reset-button" class="reset-action" type="button">重置转换</button>
+      </div>
+      <span class="control-label content-action-label">常用内容操作</span>
+      <div class="control-group">
         <button id="copy-button" type="button">复制结果</button>
         <button id="clear-button" type="button">清空内容</button>
       </div>
+    </div>
+    <p class="selection-hint">输入框有选区时，整体和指定层级转换仅作用于选区中的标题；无选区时作用于全文。结构树中的箭头只调整对应分支。</p>
+  </section>
 
-      <p id="status-message" class="status" role="status" aria-live="polite"></p>
-    </main>
+  <section id="analysis-panel" class="analysis" aria-labelledby="structure-title">
+    <div class="analysis-heading">
+      <div class="analysis-title"><h2 id="structure-title">标题结构</h2><span id="heading-count" class="badge">0 个标题</span></div>
+      <button id="structure-toggle" class="collapse-toggle" type="button" aria-expanded="true" aria-controls="analysis-content">收起</button>
+    </div>
+    <div id="analysis-content" class="analysis-content">
+      <div class="notice-area" aria-live="polite">
+        <div id="risk-message" class="risk" role="alert" hidden></div>
+        <p id="status-message" class="status" role="status"></p>
+      </div>
+      <div id="structure-view" class="structure-view"><p class="empty-state">输入 Markdown 后将在这里显示标题结构。</p></div>
+    </div>
+  </section>
 
-    <script src="script.js"></script>
-  </body>
+  <section class="editor" aria-label="Markdown 标题处理区">
+    <div class="text-panel"><label for="markdown-input">当前基准 Markdown</label><textarea id="markdown-input" placeholder="在此输入 Markdown 内容" spellcheck="false"></textarea></div>
+    <div class="text-panel"><label for="markdown-output">当前结果预览</label><textarea id="markdown-output" readonly aria-live="polite"></textarea></div>
+  </section>
+</main>
+<script src="script.js"></script>
+</body>
 </html>
