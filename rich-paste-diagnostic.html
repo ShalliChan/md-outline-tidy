@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Rich Paste Diagnostic</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      max-width: 980px;
+      margin: 28px auto;
+      padding: 0 18px 40px;
+      color: #202124;
+      font-family: Arial, "Microsoft YaHei", sans-serif;
+      line-height: 1.5;
+    }
+    h1 { margin-bottom: 8px; }
+    .privacy-note { color: #555; }
+    .paste-zone {
+      min-height: 150px;
+      margin: 20px 0;
+      padding: 22px;
+      border: 3px dashed #52789d;
+      border-radius: 8px;
+      background: #f5f9fd;
+      font-size: 1.1rem;
+      font-weight: 700;
+      outline: none;
+    }
+    .paste-zone:focus { border-color: #174a72; background: #eef6fc; }
+    button { padding: 8px 14px; font: inherit; cursor: pointer; }
+    section { margin-top: 24px; }
+    pre {
+      max-height: 420px;
+      margin: 8px 0 0;
+      padding: 12px;
+      overflow: auto;
+      border: 1px solid #d6d9de;
+      border-radius: 5px;
+      background: #f7f7f7;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .empty { color: #666; }
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin: 8px 0 16px;
+    }
+    .summary-item { padding: 7px 9px; border: 1px solid #ddd; background: #fafafa; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 8px; border: 1px solid #d6d9de; text-align: left; vertical-align: top; }
+    th { background: #f2f4f6; }
+    td:last-child { font-family: Consolas, "Courier New", monospace; overflow-wrap: anywhere; }
+    .conclusion { padding: 12px; border-left: 4px solid #52789d; background: #f5f9fd; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <h1>Rich Paste Diagnostic</h1>
+  <p class="privacy-note">所有剪贴板读取与结构分析只在当前浏览器页面内执行；页面不会联网，也不会写入 localStorage。</p>
+
+  <div id="paste-zone" class="paste-zone" contenteditable="true" role="textbox" aria-label="粘贴 ChatGPT 内容">
+    请点击这里，然后粘贴 ChatGPT 内容
+  </div>
+  <button id="clear-button" type="button">清空诊断结果</button>
+
+  <div id="results" hidden>
+    <section>
+      <h2>1. Clipboard Types</h2>
+      <pre id="clipboard-types"></pre>
+    </section>
+
+    <section>
+      <h2>2. text/plain 原始内容</h2>
+      <pre id="plain-content"></pre>
+    </section>
+
+    <section>
+      <h2>3. text/html 原始内容</h2>
+      <pre id="html-content"></pre>
+    </section>
+
+    <section id="structure-section">
+      <h2>4. HTML 结构摘要</h2>
+      <div id="structure-summary" class="summary-grid"></div>
+      <h3>发现的 headings</h3>
+      <table>
+        <thead><tr><th>层级</th><th>标题文字</th><th>内部 HTML</th></tr></thead>
+        <tbody id="heading-rows"></tbody>
+      </table>
+      <p id="no-headings" class="empty" hidden>没有发现 h1～h6 语义元素。</p>
+    </section>
+
+    <section>
+      <h2>5. 简单结论</h2>
+      <div id="conclusion" class="conclusion"></div>
+    </section>
+  </div>
+
+  <script>
+    'use strict';
+
+    const pasteZone = document.querySelector('#paste-zone');
+    const results = document.querySelector('#results');
+    const clipboardTypes = document.querySelector('#clipboard-types');
+    const plainContent = document.querySelector('#plain-content');
+    const htmlContent = document.querySelector('#html-content');
+    const structureSection = document.querySelector('#structure-section');
+    const structureSummary = document.querySelector('#structure-summary');
+    const headingRows = document.querySelector('#heading-rows');
+    const noHeadings = document.querySelector('#no-headings');
+    const conclusion = document.querySelector('#conclusion');
+
+    function setText(element, value, emptyMessage) {
+      element.textContent = value || emptyMessage;
+      element.classList.toggle('empty', !value);
+    }
+
+    function addSummaryItem(label, count) {
+      const item = document.createElement('div');
+      item.className = 'summary-item';
+      item.textContent = `${label}: ${count}`;
+      structureSummary.appendChild(item);
+    }
+
+    function count(documentNode, selector) {
+      return documentNode.querySelectorAll(selector).length;
+    }
+
+    function analyzeHtml(html) {
+      structureSummary.replaceChildren();
+      headingRows.replaceChildren();
+
+      if (!html) {
+        structureSection.hidden = true;
+        return { headingCount: 0 };
+      }
+
+      structureSection.hidden = false;
+      const parsed = new DOMParser().parseFromString(html, 'text/html');
+      const selectors = [
+        ['h1', 'h1'], ['h2', 'h2'], ['h3', 'h3'], ['h4', 'h4'], ['h5', 'h5'], ['h6', 'h6'],
+        ['p', 'p'], ['strong/b', 'strong, b'], ['em/i', 'em, i'],
+        ['ul', 'ul'], ['ol', 'ol'], ['li', 'li'], ['blockquote', 'blockquote'],
+        ['pre', 'pre'], ['code', 'code'], ['a', 'a']
+      ];
+      selectors.forEach(([label, selector]) => addSummaryItem(label, count(parsed, selector)));
+
+      const headings = Array.from(parsed.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+      headings.forEach((heading) => {
+        const row = document.createElement('tr');
+        [heading.tagName, heading.textContent.trim(), heading.innerHTML].forEach((value) => {
+          const cell = document.createElement('td');
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        headingRows.appendChild(row);
+      });
+      noHeadings.hidden = headings.length > 0;
+      return { headingCount: headings.length };
+    }
+
+    function renderConclusion(types, plain, html, analysis) {
+      const hasHtml = types.includes('text/html');
+      const hasPlain = types.includes('text/plain');
+      const hasHeadings = analysis.headingCount > 0;
+      const hasMarkdownHeadings = /^(#{1,6})[ \t]+\S/m.test(plain);
+      let importerBasis;
+
+      if (hasHtml && hasHeadings) {
+        importerBasis = '是：当前样本同时提供 HTML 与语义 heading，可作为 Rich Text → 内部 Markdown importer 的输入基础。';
+      } else if (hasHtml) {
+        importerBasis = '部分具备：存在 HTML，但当前样本没有 h1～h6；需要根据实际标签/样式继续判断标题映射。';
+      } else {
+        importerBasis = '否：本次粘贴没有提供 text/html，无法基于 HTML 结构导入。';
+      }
+
+      const lines = [
+        `检测到 text/html：${hasHtml ? '是' : '否'}`,
+        `检测到 text/plain：${hasPlain ? '是' : '否'}`,
+        `检测到 heading semantic elements：${hasHeadings ? `是（${analysis.headingCount} 个）` : '否'}`,
+        `text/plain 中检测到 Markdown # 标题标记：${hasMarkdownHeadings ? '是' : '否'}`,
+        `Rich Text importer 基础：${importerBasis}`
+      ];
+      conclusion.replaceChildren(...lines.map((line) => {
+        const paragraph = document.createElement('p');
+        paragraph.textContent = line;
+        return paragraph;
+      }));
+    }
+
+    pasteZone.addEventListener('paste', (event) => {
+      event.preventDefault();
+      const clipboard = event.clipboardData;
+      const types = clipboard ? Array.from(clipboard.types || []) : [];
+      const plain = clipboard ? clipboard.getData('text/plain') : '';
+      const html = clipboard ? clipboard.getData('text/html') : '';
+
+      setText(clipboardTypes, types.join('\n'), '没有发现 Clipboard MIME 类型。');
+      setText(plainContent, plain, '没有 text/plain 数据。');
+      setText(htmlContent, html, '没有 text/html 数据。');
+      const analysis = analyzeHtml(html);
+      renderConclusion(types, plain, html, analysis);
+      results.hidden = false;
+      pasteZone.textContent = '已捕获本次 Paste Event。可再次粘贴以覆盖当前诊断结果。';
+    });
+
+    document.querySelector('#clear-button').addEventListener('click', () => {
+      results.hidden = true;
+      clipboardTypes.textContent = '';
+      plainContent.textContent = '';
+      htmlContent.textContent = '';
+      structureSummary.replaceChildren();
+      headingRows.replaceChildren();
+      conclusion.replaceChildren();
+      pasteZone.textContent = '请点击这里，然后粘贴 ChatGPT 内容';
+      pasteZone.focus();
+    });
+  </script>
+</body>
+</html>
