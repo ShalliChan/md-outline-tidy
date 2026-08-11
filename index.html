@@ -10,7 +10,7 @@
 <main class="container">
   <header class="page-header">
     <h1>Markdown Heading Tool</h1>
-    <p>调整 Markdown ATX 标题层级，并实时检查文档结构。</p>
+
   </header>
 
   <section id="analysis-panel" class="analysis" aria-labelledby="structure-title">
@@ -32,7 +32,6 @@
           </div>
           <div class="quick-source-strip" aria-label="动态源层级">
             <button id="lowest-level" type="button" data-quick-source="lowest">最低层级</button>
-            <button id="second-lowest-level" type="button" data-quick-source="second-lowest">倒数第二层级</button>
           </div>
         </div>
         <div class="tree-control-pane">
@@ -46,20 +45,31 @@
           <p id="mapping-status" class="mapping-status">请选择源层级和目标层级。</p>
           <div class="sticky-actions" aria-label="状态与内容操作">
             <div class="sticky-action-group">
+              <button id="source-up-button" type="button" disabled>升一级</button>
+              <button id="source-down-button" type="button" disabled>降一级</button>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div class="sticky-action-group">
+              <button id="undo-button" type="button" disabled>Undo</button>
+              <button id="redo-button" type="button" disabled>Redo</button>
+            </div>
+            <span class="toolbar-divider" aria-hidden="true"></span>
+            <div class="sticky-action-group">
               <button id="continue-button" class="primary-action" type="button">以当前结果继续</button>
               <button id="reset-button" class="reset-action" type="button">重置转换</button>
             </div>
             <span class="toolbar-divider" aria-hidden="true"></span>
             <div class="sticky-action-group">
-              <button id="copy-button" type="button">复制结果</button>
+              <button id="copy-rich-button" type="button">复制富文本</button>
+              <button id="copy-markdown-button" type="button">复制 Markdown</button>
               <button id="clear-button" type="button">清空内容</button>
             </div>
           </div>
         </div>
-      </div>
-      <div class="notice-area" aria-live="polite">
-        <div id="risk-message" class="risk" role="alert" hidden></div>
-        <p id="status-message" class="status" role="status"></p>
+        <div id="sticky-status-slot" class="notice-area sticky-status-slot" aria-live="polite">
+          <div id="risk-message" class="risk" role="alert" hidden></div>
+          <p id="status-message" class="status" role="status"></p>
+        </div>
       </div>
       <div id="structure-view" class="structure-view"><p class="empty-state">输入 Markdown 后将在这里显示标题结构。</p></div>
     </div>
@@ -75,7 +85,17 @@
 
   <section class="editor" aria-label="Markdown 标题处理区">
     <div class="text-panel"><label for="markdown-input">当前基准 Markdown</label><textarea id="markdown-input" placeholder="在此输入 Markdown 内容" spellcheck="false"></textarea></div>
-    <div class="text-panel"><label for="markdown-output">当前结果预览</label><textarea id="markdown-output" readonly aria-live="polite"></textarea></div>
+    <div class="text-panel result-panel">
+      <div class="preview-heading">
+        <span id="result-preview-label">当前结果预览</span>
+        <div class="preview-modes" role="group" aria-label="结果预览模式">
+          <button id="rich-preview-button" type="button" class="active" aria-pressed="true">Rich Text</button>
+          <button id="markdown-preview-button" type="button" aria-pressed="false">Markdown</button>
+        </div>
+      </div>
+      <div id="rich-preview" class="rich-preview" aria-labelledby="result-preview-label" aria-live="polite"></div>
+      <textarea id="markdown-output" class="markdown-preview" readonly aria-labelledby="result-preview-label" aria-live="polite" hidden></textarea>
+    </div>
   </section>
 
   <section class="preset-settings" aria-label="正文预设设置">

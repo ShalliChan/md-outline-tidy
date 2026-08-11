@@ -1,5 +1,7 @@
 'use strict';
 
+var DEFAULT_PREVIEW_MODE = 'rich';
+
 var DEFAULT_PRESETS = [
   { id: 'default-16', name: '16px 正文', fontSize: 16, bold: false, builtIn: true },
   { id: 'default-19', name: '19px 正文', fontSize: 19, bold: false, builtIn: true },
@@ -70,6 +72,8 @@ function createState(markdown) {
     mappingSource: null,
     mappingSourceMode: 'single',
     mappingHeadingId: null,
+    mappingHeadingIds: [],
+    mappingBranchRootId: null,
     mappingTarget: null,
     mappingPreset: null,
     mappingRange: null,
@@ -89,6 +93,8 @@ function establishBaseline(model, markdown, metadata) {
   model.mappingSource = null;
   model.mappingSourceMode = 'single';
   model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = null;
   model.mappingTarget = null;
   model.mappingPreset = null;
   model.mappingRange = null;
@@ -101,8 +107,14 @@ function headingInRange(heading, range) {
   return heading.start >= range.start && heading.markerEnd <= range.end;
 }
 
+function hasSourceSelection(model) {
+  if (model.mappingSourceMode === 'exact') return model.mappingHeadingIds.length > 0;
+  if (model.mappingSourceMode === 'branch') return model.mappingBranchRootId !== null;
+  return model.mappingSource !== null;
+}
+
 function mappingIsActive(model) {
-  return model.mappingSource !== null && model.mappingRange !== null &&
+  return hasSourceSelection(model) &&
     (model.mappingTarget !== null || model.mappingPreset !== null);
 }
 
@@ -111,8 +123,12 @@ function adjustedLevelBeforeMapping(model, heading) {
 }
 
 function headingMatchesSource(model, heading) {
-  if (model.mappingSource === null || !headingInRange(heading, model.mappingRange)) return false;
-  if (model.mappingSourceMode === 'exact') return heading.id === model.mappingHeadingId;
+  if (!hasSourceSelection(model)) return false;
+  if (model.mappingSourceMode === 'exact') return model.mappingHeadingIds.indexOf(heading.id) !== -1;
+  if (model.mappingSourceMode === 'branch') {
+    return getSubtreeHeadingIds(model, model.mappingBranchRootId).indexOf(heading.id) !== -1;
+  }
+  if (!model.mappingRange || !headingInRange(heading, model.mappingRange)) return false;
   if (model.mappingSourceMode === 'and-below') {
     return branchSourceHeadingIds(model).indexOf(heading.id) !== -1;
   }
@@ -143,7 +159,7 @@ function branchSourceHeadingIds(model) {
 }
 
 function mappingAffectedHeadingIds(model) {
-  if (model.mappingSource === null || model.mappingRange === null) return [];
+  if (!hasSourceSelection(model)) return [];
   return model.headings.filter(function (heading) {
     return headingMatchesSource(model, heading);
   }).map(function (heading) { return heading.id; });
@@ -157,8 +173,13 @@ function headingConvertsToBody(model, heading) {
 function targetLevel(model, heading) {
   var level = adjustedLevelBeforeMapping(model, heading);
   if (mappingIsActive(model) && model.mappingTarget !== null && headingMatchesSource(model, heading)) {
+    var relativeRootLevel = model.mappingSource;
+    if (model.mappingSourceMode === 'branch') {
+      relativeRootLevel = adjustedLevelBeforeMapping(model, model.headings[model.mappingBranchRootId]);
+    }
     return clampLevel(model.mappingTarget +
-      (model.mappingSourceMode === 'and-below' ? level - model.mappingSource : 0));
+      (model.mappingSourceMode === 'and-below' || model.mappingSourceMode === 'branch'
+        ? level - relativeRootLevel : 0));
   }
   return level;
 }
@@ -215,6 +236,8 @@ function applyMapping(model, source, target, range, sourceMode) {
   model.mappingSource = source;
   model.mappingSourceMode = sourceMode || 'single';
   model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = null;
   model.mappingTarget = target;
   model.mappingPreset = null;
   model.mappingRange = range;
@@ -224,6 +247,8 @@ function applyPresetMapping(model, source, preset, range, sourceMode) {
   model.mappingSource = source;
   model.mappingSourceMode = sourceMode || 'single';
   model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = null;
   model.mappingTarget = null;
   model.mappingPreset = Object.assign({}, preset);
   model.mappingRange = range;
@@ -246,16 +271,35 @@ function setSourceChoice(model, level, mode, range) {
   model.mappingSource = isActive ? null : level;
   model.mappingSourceMode = normalizedMode;
   model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = null;
   model.mappingRange = range;
 }
 
 function setExactSourceChoice(model, headingId, range) {
   var heading = model.headings[headingId];
   if (!heading) return;
-  var isActive = model.mappingSourceMode === 'exact' && model.mappingHeadingId === headingId;
-  model.mappingSource = isActive ? null : adjustedLevelBeforeMapping(model, heading);
+  var ids = model.mappingSourceMode === 'exact' ? model.mappingHeadingIds.slice() : [];
+  var existingIndex = ids.indexOf(headingId);
+  if (existingIndex === -1) ids.push(headingId);
+  else ids.splice(existingIndex, 1);
+  model.mappingSource = null;
   model.mappingSourceMode = 'exact';
-  model.mappingHeadingId = isActive ? null : headingId;
+  model.mappingHeadingIds = ids;
+  model.mappingHeadingId = ids.length === 1 ? ids[0] : null;
+  model.mappingBranchRootId = null;
+  model.mappingRange = range;
+}
+
+function setBranchSourceChoice(model, headingId, range) {
+  var heading = model.headings[headingId];
+  if (!heading) return;
+  var isActive = model.mappingSourceMode === 'branch' && model.mappingBranchRootId === headingId;
+  model.mappingSource = isActive ? null : adjustedLevelBeforeMapping(model, heading);
+  model.mappingSourceMode = 'branch';
+  model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = isActive ? null : headingId;
   model.mappingRange = range;
 }
 
@@ -270,6 +314,8 @@ function clearRoundTransforms(model) {
   model.mappingSource = null;
   model.mappingSourceMode = 'single';
   model.mappingHeadingId = null;
+  model.mappingHeadingIds = [];
+  model.mappingBranchRootId = null;
   model.mappingTarget = null;
   model.mappingPreset = null;
   model.mappingRange = null;
@@ -346,10 +392,27 @@ function dynamicSourceLevels(model, range) {
     if (headingInRange(heading, range)) levels[adjustedLevelBeforeMapping(model, heading)] = true;
   });
   var sorted = Object.keys(levels).map(Number).sort(function (a, b) { return a - b; });
-  return {
-    lowest: sorted.length ? sorted[sorted.length - 1] : null,
-    secondLowest: sorted.length > 1 ? sorted[sorted.length - 2] : null
-  };
+  return { lowest: sorted.length ? sorted[sorted.length - 1] : null };
+}
+
+function selectedSourceCanShift(model, delta) {
+  var ids = mappingAffectedHeadingIds(model);
+  if (!ids.length) return false;
+  if (model.mappingSourceMode === 'branch') return true;
+  return ids.every(function (id) {
+    var shifted = adjustedLevelBeforeMapping(model, model.headings[id]) + delta;
+    return shifted >= 1 && shifted <= 6;
+  });
+}
+
+function shiftSelectedSource(model, delta) {
+  if (!selectedSourceCanShift(model, delta)) return false;
+  mappingAffectedHeadingIds(model).forEach(function (id) {
+    model.offsets[id] += delta;
+  });
+  model.mappingTarget = null;
+  model.mappingPreset = null;
+  return true;
 }
 
 function isThematicBreak(line) {
@@ -464,6 +527,124 @@ function escapeHtml(value) {
   });
 }
 
+function inlineHtmlToMarkdown(node, options) {
+  options = options || {};
+  if (node.nodeType === 3) return node.nodeValue.replace(/\s+/g, ' ');
+  if (node.nodeType !== 1) return '';
+  var tag = node.tagName.toLowerCase();
+  var content = Array.prototype.map.call(node.childNodes, function (child) {
+    return inlineHtmlToMarkdown(child, options);
+  }).join('');
+  if (tag === 'br') return '\n';
+  if (tag === 'strong' || tag === 'b') return options.inHeading ? content : '**' + content + '**';
+  if (tag === 'em' || tag === 'i') return '*' + content + '*';
+  if (tag === 'code') {
+    var tick = String.fromCharCode(96);
+    var inlineFence = content.indexOf(tick) === -1 ? tick : tick + tick;
+    return inlineFence + content + inlineFence;
+  }
+  if (tag === 'a') {
+    var href = node.getAttribute('href');
+    return href ? '[' + content + '](' + href + ')' : content;
+  }
+  return content;
+}
+
+function listHtmlToMarkdown(list, depth) {
+  var ordered = list.tagName.toLowerCase() === 'ol';
+  var items = Array.prototype.filter.call(list.children, function (child) {
+    return child.tagName && child.tagName.toLowerCase() === 'li';
+  });
+  return items.map(function (item, index) {
+    var inline = Array.prototype.map.call(item.childNodes, function (child) {
+      if (child.nodeType === 1 && /^(ul|ol)$/i.test(child.tagName)) return '';
+      if (child.nodeType === 1 && /^(p|div)$/i.test(child.tagName)) {
+        return inlineHtmlToMarkdown(child, {}).trim();
+      }
+      return inlineHtmlToMarkdown(child, {});
+    }).join('').replace(/\s*\n\s*/g, ' ').trim();
+    var indent = new Array(depth + 1).join('  ');
+    var marker = ordered ? (index + 1) + '. ' : '- ';
+    var nested = Array.prototype.filter.call(item.children, function (child) {
+      return /^(ul|ol)$/i.test(child.tagName);
+    }).map(function (child) {
+      return listHtmlToMarkdown(child, depth + 1);
+    }).join('\n');
+    return indent + marker + inline + (nested ? '\n' + nested : '');
+  }).join('\n');
+}
+
+function reliableCodeLanguage(node) {
+  var code = node.querySelector('code');
+  var classText = ((code && code.className) || node.className || '').toString();
+  var match = classText.match(/(?:^|\s)language-([A-Za-z0-9_+-]+)(?:\s|$)/);
+  return match ? match[1] : '';
+}
+
+function codeBlockHtmlToMarkdown(node) {
+  var content = node.textContent.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+  var tick = String.fromCharCode(96);
+  var runs = content.match(new RegExp(tick + '{3,}', 'g')) || [];
+  var longest = runs.reduce(function (length, run) { return Math.max(length, run.length); }, 2);
+  var fence = new Array(Math.max(3, longest + 1) + 1).join(tick);
+  return fence + reliableCodeLanguage(node) + '\n' + content + '\n' + fence;
+}
+
+function blockChildrenToMarkdown(node) {
+  return Array.prototype.map.call(node.childNodes, blockHtmlToMarkdown)
+    .filter(function (value) { return value.trim(); })
+    .join('\n\n');
+}
+
+function blockHtmlToMarkdown(node) {
+  if (node.nodeType === 3) return node.nodeValue.trim();
+  if (node.nodeType !== 1) return '';
+  var tag = node.tagName.toLowerCase();
+  var heading = tag.match(/^h([1-6])$/);
+  if (heading) {
+    return '#'.repeat(Number(heading[1])) + ' ' + inlineHtmlToMarkdown(node, { inHeading: true }).trim();
+  }
+  if (tag === 'p') return inlineHtmlToMarkdown(node, {}).trim();
+  if (tag === 'ul' || tag === 'ol') return listHtmlToMarkdown(node, 0);
+  if (tag === 'pre') return codeBlockHtmlToMarkdown(node);
+  if (tag === 'blockquote') {
+    var quoted = blockChildrenToMarkdown(node) || inlineHtmlToMarkdown(node, {}).trim();
+    return quoted.split('\n').map(function (line) { return line ? '> ' + line : '>'; }).join('\n');
+  }
+  if (tag === 'hr') return '---';
+  var hasBlockChild = Array.prototype.some.call(node.children, function (child) {
+    return /^(h[1-6]|p|div|section|article|ul|ol|pre|blockquote|hr)$/i.test(child.tagName);
+  });
+  return hasBlockChild ? blockChildrenToMarkdown(node) : inlineHtmlToMarkdown(node, {}).trim();
+}
+
+function normalizeImportedMarkdown(markdown) {
+  return markdown.replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map(function (line) { return line.replace(/[ \t]+$/g, ''); })
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function richHtmlToMarkdown(html) {
+  var parsed = new DOMParser().parseFromString(html, 'text/html');
+  return normalizeImportedMarkdown(blockChildrenToMarkdown(parsed.body));
+}
+
+function importClipboardContent(html, plain, importer) {
+  if (!html) return { text: plain, usedRich: false, headingCount: 0 };
+  try {
+    var parsed = new DOMParser().parseFromString(html, 'text/html');
+    var headingCount = parsed.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
+    if (!headingCount) return { text: plain, usedRich: false, headingCount: 0 };
+    var markdown = (importer || richHtmlToMarkdown)(html);
+    if (!markdown && plain) return { text: plain, usedRich: false, headingCount: 0 };
+    return { text: markdown, usedRich: true, headingCount: headingCount };
+  } catch (error) {
+    return { text: plain, usedRich: false, headingCount: 0 };
+  }
+}
 function inlineMarkdown(value) {
   var escaped = escapeHtml(value);
   escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -499,6 +680,10 @@ function markdownToHtml(markdown, metadata) {
       fence = opened;
       return;
     }
+    if (!line.trim()) {
+      closeList();
+      return;
+    }
     var annotation = metadata && metadata[lineIndex];
     if (annotation) {
       closeList();
@@ -523,7 +708,6 @@ function markdownToHtml(markdown, metadata) {
     closeList();
     if (/^\s*>/.test(line)) html.push('<blockquote>' + inlineMarkdown(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
     else if (isThematicBreak(line)) html.push('<hr>');
-    else if (!line.trim()) html.push('<p><br></p>');
     else html.push('<p>' + inlineMarkdown(line) + '</p>');
   });
   closeList();
@@ -531,14 +715,22 @@ function markdownToHtml(markdown, metadata) {
   return html.join('');
 }
 
+function renderRichHtml(model) {
+  var result = renderResult(model);
+  return markdownToHtml(result.text, result.metadata);
+}
+
 function createClipboardPayload(model) {
   var result = renderResult(model);
-  var hasRich = Object.keys(result.metadata).length > 0;
   return {
     plain: result.text,
-    html: hasRich ? markdownToHtml(result.text, result.metadata) : null,
-    hasRich: hasRich
+    html: renderRichHtml(model),
+    hasRich: true
   };
+}
+
+function createMarkdownClipboardPayload(model) {
+  return { plain: renderMarkdown(model), html: null, hasRich: false };
 }
 
 function combinePresets(custom) {
@@ -557,6 +749,40 @@ function resetStateWithoutNavigation(model, editor) {
   return original;
 }
 
+function snapshotState(model) {
+  return JSON.parse(JSON.stringify(model));
+}
+
+function restoreState(model, snapshot) {
+  Object.keys(model).forEach(function (key) { delete model[key]; });
+  Object.assign(model, snapshotState(snapshot));
+  return model;
+}
+
+function createHistory(limit) {
+  return { undo: [], redo: [], limit: Math.max(1, Number(limit) || 50) };
+}
+
+function pushHistorySnapshot(history, snapshot) {
+  history.undo.push(snapshotState(snapshot));
+  if (history.undo.length > history.limit) history.undo.shift();
+  history.redo = [];
+}
+
+function undoHistory(history, model) {
+  if (!history.undo.length) return false;
+  history.redo.push(snapshotState(model));
+  restoreState(model, history.undo.pop());
+  return true;
+}
+
+function redoHistory(history, model) {
+  if (!history.redo.length) return false;
+  history.undo.push(snapshotState(model));
+  restoreState(model, history.redo.pop());
+  return true;
+}
+
 function bodyGhostHtml(heading, impactClass) {
   return '<div class="outline-cell body-ghost is-changed' + (impactClass ? ' ' + impactClass : '') +
     '"><div class="body-ghost-content"><span class="outline-text">' +
@@ -564,6 +790,7 @@ function bodyGhostHtml(heading, impactClass) {
 }
 
 var HeadingTool = {
+  DEFAULT_PREVIEW_MODE: DEFAULT_PREVIEW_MODE,
   DEFAULT_PRESETS: DEFAULT_PRESETS,
   clampLevel: clampLevel,
   cloneMetadata: cloneMetadata,
@@ -571,6 +798,7 @@ var HeadingTool = {
   createState: createState,
   establishBaseline: establishBaseline,
   headingInRange: headingInRange,
+  hasSourceSelection: hasSourceSelection,
   mappingIsActive: mappingIsActive,
   adjustedLevelBeforeMapping: adjustedLevelBeforeMapping,
   headingMatchesSource: headingMatchesSource,
@@ -587,6 +815,7 @@ var HeadingTool = {
   setMappingChoice: setMappingChoice,
   setSourceChoice: setSourceChoice,
   setExactSourceChoice: setExactSourceChoice,
+  setBranchSourceChoice: setBranchSourceChoice,
   setPresetChoice: setPresetChoice,
   clearRoundTransforms: clearRoundTransforms,
   commitResult: commitResult,
@@ -598,6 +827,8 @@ var HeadingTool = {
   findRisks: findRisks,
   findBodyConversionRisks: findBodyConversionRisks,
   dynamicSourceLevels: dynamicSourceLevels,
+  selectedSourceCanShift: selectedSourceCanShift,
+  shiftSelectedSource: shiftSelectedSource,
   isThematicBreak: isThematicBreak,
   removeThematicBreaks: removeThematicBreaks,
   isGuideLine: isGuideLine,
@@ -605,11 +836,21 @@ var HeadingTool = {
   mergeShortParagraphs: mergeShortParagraphs,
   remapMetadataByContent: remapMetadataByContent,
   applyTextResult: applyTextResult,
+  richHtmlToMarkdown: richHtmlToMarkdown,
+  importClipboardContent: importClipboardContent,
   markdownToHtml: markdownToHtml,
+  renderRichHtml: renderRichHtml,
   createClipboardPayload: createClipboardPayload,
+  createMarkdownClipboardPayload: createMarkdownClipboardPayload,
   combinePresets: combinePresets,
   continueStateWithoutNavigation: continueStateWithoutNavigation,
   resetStateWithoutNavigation: resetStateWithoutNavigation,
+  snapshotState: snapshotState,
+  restoreState: restoreState,
+  createHistory: createHistory,
+  pushHistorySnapshot: pushHistorySnapshot,
+  undoHistory: undoHistory,
+  redoHistory: redoHistory,
   bodyGhostHtml: bodyGhostHtml
 };
 
@@ -619,6 +860,9 @@ if (typeof module !== 'undefined' && module.exports) module.exports = HeadingToo
 if (typeof document !== 'undefined' && document.getElementById('markdown-input')) {
   var input = document.getElementById('markdown-input');
   var output = document.getElementById('markdown-output');
+  var richPreview = document.getElementById('rich-preview');
+  var richPreviewButton = document.getElementById('rich-preview-button');
+  var markdownPreviewButton = document.getElementById('markdown-preview-button');
   var structure = document.getElementById('structure-view');
   var count = document.getElementById('heading-count');
   var riskMessage = document.getElementById('risk-message');
@@ -631,8 +875,14 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var presetTargets = document.getElementById('preset-targets');
   var presetEditor = document.getElementById('preset-editor');
   var lowestButton = document.getElementById('lowest-level');
-  var secondLowestButton = document.getElementById('second-lowest-level');
+  var sourceUpButton = document.getElementById('source-up-button');
+  var sourceDownButton = document.getElementById('source-down-button');
+  var undoButton = document.getElementById('undo-button');
+  var redoButton = document.getElementById('redo-button');
   var state = createState('');
+  var appHistory = createHistory(50);
+  var previewMode = DEFAULT_PREVIEW_MODE;
+  var lastInputAt = 0;
   var lastImpact = null;
   var customPresets = loadCustomPresets();
 
@@ -686,6 +936,52 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     lastImpact = null;
   }
 
+  function stateSignature(model) {
+    return JSON.stringify(model);
+  }
+
+  function resultSignature(model) {
+    return JSON.stringify(renderResult(model));
+  }
+
+  function performStateMutation(action, resultOnly) {
+    var before = snapshotState(state);
+    var beforeSignature = resultOnly ? resultSignature(state) : stateSignature(state);
+    action();
+    var afterSignature = resultOnly ? resultSignature(state) : stateSignature(state);
+    if (beforeSignature === afterSignature) return false;
+    pushHistorySnapshot(appHistory, before);
+    lastInputAt = 0;
+    return true;
+  }
+
+  function updateHistoryControls() {
+    undoButton.disabled = appHistory.undo.length === 0;
+    redoButton.disabled = appHistory.redo.length === 0;
+  }
+
+  function restoreHistoryDirection(direction) {
+    var changed = direction === 'undo' ? undoHistory(appHistory, state) : redoHistory(appHistory, state);
+    if (!changed) return;
+    input.value = state.baseline;
+    lastInputAt = 0;
+    clearImpact();
+    render();
+    setStatus(direction === 'undo' ? '已撤销上一步应用操作' : '已重做下一步应用操作');
+  }
+
+  function setPreviewMode(mode) {
+    previewMode = mode === 'markdown' ? 'markdown' : 'rich';
+    var rich = previewMode === 'rich';
+    richPreview.hidden = !rich;
+    output.hidden = rich;
+    richPreviewButton.classList.toggle('active', rich);
+    markdownPreviewButton.classList.toggle('active', !rich);
+    richPreviewButton.setAttribute('aria-pressed', String(rich));
+    markdownPreviewButton.setAttribute('aria-pressed', String(!rich));
+    autoSizeEditors();
+  }
+
   function autoSizeEditors() {
     var maximum = Math.max(260, Math.min(window.innerHeight * 0.65, 720));
     [input, output].forEach(function (editor) {
@@ -704,20 +1000,27 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       }).join('') + '</span>';
   }
 
-  function outlineCell(text, level, path, continuations, changed, headingId, actionsEnabled, impactClass, continues, exactSourceEnabled) {
+  function outlineCell(text, level, path, continuations, changed, headingId, actionsEnabled, impactClass, continues, sourceActionsEnabled) {
     var actions = actionsEnabled
       ? '<span class="branch-actions"><button type="button" data-action="subtree-up" data-heading-id="' + headingId +
         '" title="当前标题及子树提升一级">↑</button><button type="button" data-action="subtree-down" data-heading-id="' +
         headingId + '" title="当前标题及子树降低一级">↓</button></span>' : '';
-    var exactSource = exactSourceEnabled
-      ? '<button type="button" class="exact-source-button" data-action="source-only" data-heading-id="' + headingId +
-        '" aria-label="仅选择当前标题作为源" title="仅选择当前这一条标题">仅此</button>' : '';
+    var exactSelected = state.mappingSourceMode === 'exact' && state.mappingHeadingIds.indexOf(headingId) !== -1;
+    var branchSelected = state.mappingSourceMode === 'branch' && state.mappingBranchRootId === headingId;
+    var sourceActions = sourceActionsEnabled
+      ? '<span class="source-row-actions"><button type="button" class="exact-source-button' +
+        (exactSelected ? ' active' : '') + '" data-action="source-select" data-heading-id="' + headingId +
+        '" aria-pressed="' + String(exactSelected) + '" title="切换选择当前标题">选择</button>' +
+        '<button type="button" class="branch-source-button' + (branchSelected ? ' active' : '') +
+        '" data-action="branch-source" data-heading-id="' + headingId + '" aria-pressed="' +
+        String(branchSelected) + '" title="选择当前标题及其真实后代">此分支</button></span>' : '';
     return '<div class="outline-cell level-' + level + (changed ? ' is-changed' : '') +
+      (exactSelected || branchSelected ? ' source-selected' : '') +
       (impactClass ? ' ' + impactClass : '') + '"><div class="outline-node">' +
       renderPath(path, continuations) +
       '<span class="current-node' + (continues ? ' continues' : '') + '" aria-hidden="true"></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
-      '<span class="level-name">H' + level + '</span>' + exactSource + actions + '</div></div>';
+      '<span class="level-name">H' + level + '</span>' + sourceActions + actions + '</div></div>';
   }
 
   function renderPresetControls() {
@@ -756,28 +1059,34 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     lowestButton.disabled = dynamic.lowest === null;
     lowestButton.dataset.level = dynamic.lowest === null ? '' : dynamic.lowest;
     lowestButton.textContent = dynamic.lowest === null ? '最低层级' : '最低层级 H' + dynamic.lowest;
-    secondLowestButton.disabled = dynamic.secondLowest === null;
-    secondLowestButton.dataset.level = dynamic.secondLowest === null ? '' : dynamic.secondLowest;
-    secondLowestButton.textContent = dynamic.secondLowest === null ? '倒数第二层级' : '倒数第二层级 H' + dynamic.secondLowest;
-    [lowestButton, secondLowestButton].forEach(function (button) {
-      button.classList.toggle('active', !button.disabled && Number(button.dataset.level) === state.mappingSource &&
-        state.mappingSourceMode === 'single');
-    });
+    lowestButton.classList.toggle('active', !lowestButton.disabled &&
+      Number(lowestButton.dataset.level) === state.mappingSource && state.mappingSourceMode === 'single');
+    sourceUpButton.disabled = !selectedSourceCanShift(state, -1);
+    sourceDownButton.disabled = !selectedSourceCanShift(state, 1);
+    updateHistoryControls();
     renderPresetControls();
+    var sourceLabel = '';
+    if (state.mappingSourceMode === 'exact' && state.mappingHeadingIds.length) {
+      sourceLabel = '已选 ' + state.mappingHeadingIds.length + ' 条';
+    } else if (state.mappingSourceMode === 'branch' && state.mappingBranchRootId !== null) {
+      sourceLabel = '此分支：' + (state.headings[state.mappingBranchRootId].text || '空标题');
+    } else if (state.mappingSource !== null) {
+      sourceLabel = 'H' + state.mappingSource + (state.mappingSourceMode === 'and-below' ? '+' : '');
+    }
     if (mappingIsActive(state)) {
-      var sourceLabel = state.mappingSourceMode === 'exact'
-        ? '仅此：' + (state.headings[state.mappingHeadingId].text || '空标题')
-        : 'H' + state.mappingSource + (state.mappingSourceMode === 'and-below' ? '+' : '');
       mappingStatus.textContent = '实时转换：' + sourceLabel + ' → ' +
         (state.mappingPreset ? state.mappingPreset.name + ' 正文' : 'H' + state.mappingTarget);
+    } else if (sourceLabel) {
+      mappingStatus.textContent = sourceLabel + ' · 请选择目标';
     } else {
-      mappingStatus.textContent = '请选择源层级和一个目标；只选择一侧时不会转换。';
+      mappingStatus.textContent = '请选择 Source 和目标；只选择一侧时不会转换。';
     }
   }
 
   function render() {
     var result = renderResult(state);
     output.value = result.text;
+    richPreview.innerHTML = renderRichHtml(state);
     count.textContent = state.headings.length + ' 个标题';
     renderMappingControls();
     if (!state.headings.length) {
@@ -800,7 +1109,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
           var afterImpact = showAfter ? 'impact impact-' + lastImpact.type + ' impact-after' : '';
           var beforeContinues = Boolean(beforePaths[index + 1] && beforePaths[index + 1][heading.level - 1]);
           var before = outlineCell(escapeHtml(heading.text || '（空标题）'), heading.level, beforePaths[index],
-            beforeContinuations[index], false, heading.id, false, beforeImpact, beforeContinues, true);
+            beforeContinuations[index], false, heading.id, false, beforeImpact, beforeContinues, false);
           if (headingConvertsToBody(state, heading)) {
             return '<li class="outline-row">' + before + bodyGhostHtml(heading, afterImpact) + '</li>';
           }
@@ -810,7 +1119,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
           var afterContinues = Boolean(nextRemaining && info.path && afterPathById[nextRemaining.id].path[target - 1]);
           return '<li class="outline-row">' + before +
             outlineCell(escapeHtml(heading.text || '（空标题）'), target, info.path, info.continuation,
-              target !== heading.level, heading.id, true, afterImpact, afterContinues, false) + '</li>';
+              target !== heading.level, heading.id, true, afterImpact, afterContinues, true) + '</li>';
         }).join('') + '</ol>';
     }
     var inversionRisks = findRisks(state);
@@ -824,19 +1133,21 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   }
 
   function updateMappingImpact() {
-    if (state.mappingSource === null) clearImpact();
+    if (!hasSourceSelection(state)) clearImpact();
     else setImpact('mapping', mappingAffectedHeadingIds(state));
   }
 
   function chooseSource(level, mode) {
     var range = currentRange();
-    setSourceChoice(state, level, mode || 'single', range);
+    performStateMutation(function () {
+      setSourceChoice(state, level, mode || 'single', range);
+    }, true);
     updateMappingImpact();
     render();
     setStatus(mappingIsActive(state) ? '指定转换已实时生效' : '源层级已更新；请选择目标');
   }
 
-  function writeRichSelectionFallback(html) {
+  function writeRichSelectionFallback(html, plain) {
     var holder = document.createElement('div');
     holder.contentEditable = 'true';
     holder.setAttribute('aria-hidden', 'true');
@@ -844,6 +1155,12 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     holder.style.left = '-9999px';
     holder.innerHTML = html;
     document.body.appendChild(holder);
+    var handleCopy = function (event) {
+      event.preventDefault();
+      event.clipboardData.setData('text/html', html);
+      event.clipboardData.setData('text/plain', plain);
+    };
+    document.addEventListener('copy', handleCopy, { once: true });
     var selection = window.getSelection();
     var range = document.createRange();
     range.selectNodeContents(holder);
@@ -852,10 +1169,59 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     var copied = document.execCommand('copy');
     selection.removeAllRanges();
     holder.remove();
-    if (!copied) throw new Error('富文本回退复制失败');
+    if (!copied) {
+      document.removeEventListener('copy', handleCopy);
+      throw new Error('富文本回退复制失败');
+    }
   }
 
-  input.addEventListener('input', function () {
+  function writePlainTextFallback(text) {
+    var holder = document.createElement('textarea');
+    holder.setAttribute('aria-hidden', 'true');
+    holder.style.position = 'fixed';
+    holder.style.left = '-9999px';
+    holder.value = text;
+    document.body.appendChild(holder);
+    var handleCopy = function (event) {
+      event.preventDefault();
+      event.clipboardData.setData('text/plain', text);
+    };
+    document.addEventListener('copy', handleCopy, { once: true });
+    holder.select();
+    var copied = document.execCommand('copy');
+    holder.remove();
+    if (!copied) {
+      document.removeEventListener('copy', handleCopy);
+      throw new Error('纯文本回退复制失败');
+    }
+  }
+
+  input.addEventListener('paste', function (event) {
+    if (!event.clipboardData) return;
+    var imported = importClipboardContent(
+      event.clipboardData.getData('text/html'),
+      event.clipboardData.getData('text/plain')
+    );
+    if (!imported.usedRich) return;
+    event.preventDefault();
+    var start = input.selectionStart;
+    var end = input.selectionEnd;
+    var before = snapshotState(state);
+    var nextText = input.value.slice(0, start) + imported.text + input.value.slice(end);
+    input.value = nextText;
+    state = createState(nextText);
+    pushHistorySnapshot(appHistory, before);
+    lastInputAt = 0;
+    clearImpact();
+    render();
+    setStatus('已识别富文本结构 · ' + imported.headingCount + ' 个标题');
+  });
+  input.addEventListener('input', function (event) {
+    var now = Date.now();
+    var isSeparateInput = event.inputType === 'insertFromPaste' || event.inputType === 'insertFromDrop' ||
+      now - lastInputAt > 800;
+    if (isSeparateInput) pushHistorySnapshot(appHistory, state);
+    lastInputAt = now;
     state = createState(input.value);
     clearImpact();
     render();
@@ -868,18 +1234,18 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     chooseSource(Number(button.dataset.level), button.dataset.sourceMode || 'single');
   });
 
-  [lowestButton, secondLowestButton].forEach(function (button) {
-    button.addEventListener('click', function () {
-      if (button.disabled || !button.dataset.level) return;
-      chooseSource(Number(button.dataset.level), 'single');
-    });
+  lowestButton.addEventListener('click', function () {
+    if (lowestButton.disabled || !lowestButton.dataset.level) return;
+    chooseSource(Number(lowestButton.dataset.level), 'single');
   });
 
   targetLevels.addEventListener('click', function (event) {
     var button = event.target.closest('button[data-level]');
     if (!button) return;
     var range = currentRange();
-    setMappingChoice(state, 'target', Number(button.dataset.level), range);
+    performStateMutation(function () {
+      setMappingChoice(state, 'target', Number(button.dataset.level), range);
+    }, true);
     updateMappingImpact();
     render();
     setStatus(mappingIsActive(state) ? '标题层级转换已实时生效' : '目标层级已更新；请选择源');
@@ -890,7 +1256,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     if (!button) return;
     var preset = allPresets().find(function (item) { return item.id === button.dataset.presetId; });
     if (!preset) return;
-    setPresetChoice(state, preset, currentRange());
+    performStateMutation(function () {
+      setPresetChoice(state, preset, currentRange());
+    }, true);
     updateMappingImpact();
     render();
     setStatus(mappingIsActive(state) ? '标题转正文已实时生效' : '正文预设已更新；请选择源');
@@ -900,17 +1268,35 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     var button = event.target.closest('button[data-action]');
     if (!button) return;
     var headingId = Number(button.dataset.headingId);
-    if (button.dataset.action === 'source-only') {
-      var heading = state.headings[headingId];
-      setExactSourceChoice(state, headingId, { start: heading.start, end: heading.markerEnd });
+    var heading = state.headings[headingId];
+    if (button.dataset.action === 'source-select') {
+      performStateMutation(function () {
+        setExactSourceChoice(state, headingId, { start: 0, end: state.baseline.length });
+      }, true);
       updateMappingImpact();
       render();
-      setStatus(state.mappingSource === null ? '已取消单标题 Source' : '已仅选择“' + (heading.text || '空标题') + '”作为 Source');
+      setStatus(state.mappingHeadingIds.length
+        ? '已选择 ' + state.mappingHeadingIds.length + ' 条具体标题'
+        : '已取消具体标题选择');
       return;
     }
+    if (button.dataset.action === 'branch-source') {
+      performStateMutation(function () {
+        setBranchSourceChoice(state, headingId, { start: 0, end: state.baseline.length });
+      }, true);
+      updateMappingImpact();
+      render();
+      setStatus(state.mappingBranchRootId === null
+        ? '已取消分支 Source'
+        : '已选择“' + (heading.text || '空标题') + '”及其分支作为 Source');
+      return;
+    }
+    if (button.dataset.action !== 'subtree-up' && button.dataset.action !== 'subtree-down') return;
     var delta = button.dataset.action === 'subtree-up' ? -1 : 1;
     var ids = getSubtreeHeadingIds(state, headingId);
-    changeSubtree(state, headingId, delta);
+    performStateMutation(function () {
+      changeSubtree(state, headingId, delta);
+    }, false);
     setImpact('subtree', ids);
     render();
     setStatus('已将“' + (state.headings[headingId].text || '空标题') + '”及其子树' +
@@ -918,14 +1304,18 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   });
 
   document.getElementById('continue-button').addEventListener('click', function () {
-    continueStateWithoutNavigation(state, input);
+    performStateMutation(function () {
+      continueStateWithoutNavigation(state, input);
+    }, false);
     clearImpact();
     render();
     setStatus('当前文本及正文样式已成为新的 Baseline；Original 保持不变');
   });
 
   document.getElementById('reset-button').addEventListener('click', function () {
-    resetStateWithoutNavigation(state, input);
+    performStateMutation(function () {
+      resetStateWithoutNavigation(state, input);
+    }, false);
     clearImpact();
     render();
     setStatus('已恢复最初 Original，并清除全部正文样式与多轮状态');
@@ -937,18 +1327,33 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     structureToggle.textContent = collapsed ? '展开' : '收起';
   });
 
-  document.getElementById('copy-button').addEventListener('click', async function () {
+  sourceUpButton.addEventListener('click', function () {
+    if (sourceUpButton.disabled) return;
+    var ids = mappingAffectedHeadingIds(state);
+    performStateMutation(function () { shiftSelectedSource(state, -1); }, false);
+    setImpact('source-shift', ids);
+    render();
+    setStatus('已将当前 Source 提升一级');
+  });
+
+  sourceDownButton.addEventListener('click', function () {
+    if (sourceDownButton.disabled) return;
+    var ids = mappingAffectedHeadingIds(state);
+    performStateMutation(function () { shiftSelectedSource(state, 1); }, false);
+    setImpact('source-shift', ids);
+    render();
+    setStatus('已将当前 Source 降低一级');
+  });
+
+  undoButton.addEventListener('click', function () { restoreHistoryDirection('undo'); });
+  redoButton.addEventListener('click', function () { restoreHistoryDirection('redo'); });
+  richPreviewButton.addEventListener('click', function () { setPreviewMode('rich'); });
+  markdownPreviewButton.addEventListener('click', function () { setPreviewMode('markdown'); });
+
+  document.getElementById('copy-rich-button').addEventListener('click', async function () {
     var payload = createClipboardPayload(state);
     if (!payload.plain) { setStatus('没有可复制的内容'); return; }
-    if (!payload.hasRich) {
-      try {
-        await navigator.clipboard.writeText(payload.plain);
-        setStatus('已复制 Markdown 结果');
-      } catch (error) {
-        setStatus('复制失败，请在结果框中手动复制');
-      }
-      return;
-    }
+
     try {
       if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
         throw new Error('ClipboardItem 不可用');
@@ -957,20 +1362,39 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
         'text/plain': new Blob([payload.plain], { type: 'text/plain' }),
         'text/html': new Blob([payload.html], { type: 'text/html' })
       })]);
-      setStatus('已复制富文本结果（同时包含 text/plain 与 text/html）');
+      setStatus('已复制富文本');
     } catch (error) {
       try {
-        writeRichSelectionFallback(payload.html);
-        setStatus('已通过兼容模式复制富文本结果');
+        writeRichSelectionFallback(payload.html, payload.plain);
+        setStatus('已通过兼容模式复制富文本');
       } catch (fallbackError) {
-        setStatus('富文本复制失败，请在结果框中手动复制 Markdown 结果');
+        setStatus('富文本复制失败，请重试或切换浏览器权限');
+      }
+    }
+  });
+
+  document.getElementById('copy-markdown-button').addEventListener('click', async function () {
+    var payload = createMarkdownClipboardPayload(state);
+    if (!payload.plain) { setStatus('没有可复制的内容'); return; }
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard API 不可用');
+      await navigator.clipboard.writeText(payload.plain);
+      setStatus('已复制 Markdown');
+    } catch (error) {
+      try {
+        writePlainTextFallback(payload.plain);
+        setStatus('已通过兼容模式复制 Markdown');
+      } catch (fallbackError) {
+        setStatus('Markdown 复制失败，请在预览中手动复制');
       }
     }
   });
 
   document.getElementById('clear-button').addEventListener('click', function () {
-    input.value = '';
-    state = createState('');
+    performStateMutation(function () {
+      input.value = '';
+      state = createState('');
+    }, false);
     clearImpact();
     render();
     setStatus('');
@@ -978,7 +1402,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
 
   document.getElementById('remove-breaks-button').addEventListener('click', function () {
     var text = removeThematicBreaks(state.baseline);
-    applyTextResult(state, text);
+    if (text !== state.baseline) performStateMutation(function () {
+      applyTextResult(state, text);
+    }, false);
     clearImpact();
     render();
     setStatus(text === state.baseline ? '没有发现可删除的分隔线' : '已在 Result 中删除分隔线；确认后写入 Baseline');
@@ -986,7 +1412,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
 
   document.getElementById('compress-guide-lines-button').addEventListener('click', function () {
     var text = compressGuideLines(state.baseline);
-    applyTextResult(state, text);
+    if (text !== state.baseline) performStateMutation(function () {
+      applyTextResult(state, text);
+    }, false);
     clearImpact();
     render();
     setStatus(text === state.baseline ? '没有发现可压缩的连续引导行' : '已在 Result 中压缩引导行；确认后写入 Baseline');
@@ -1029,5 +1457,6 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   });
 
   window.addEventListener('resize', autoSizeEditors);
+  setPreviewMode(DEFAULT_PREVIEW_MODE);
   render();
 }

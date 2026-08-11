@@ -58,11 +58,16 @@ button, textarea { font: inherit; }
 .structure-mapping-bar .level-strip { gap: 4px; }
 .structure-mapping-bar .level-strip button { min-width: 34px; min-height: 30px; padding: 3px 5px; }
 .structure-mapping-bar .mapping-status {
+  width: min(320px, 30vw);
+  height: 1.25em;
   min-height: 1.25em;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   color: #5f6b76;
   font-size: .72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mapping-footer {
   grid-column: 1 / -1;
@@ -81,7 +86,16 @@ button, textarea { font: inherit; }
 }
 .sticky-actions { flex: 0 0 auto; }
 .sticky-actions button { min-height: 32px; padding: 5px 10px; font-size: .76rem; white-space: nowrap; }
-.notice-area { display: grid; min-height: 0; margin-bottom: 8px; align-content: start; gap: 4px; font-size: .78rem; }
+.notice-area { display: grid; align-content: start; gap: 3px; font-size: .78rem; }
+.sticky-status-slot {
+  grid-column: 1 / -1;
+  height: 48px;
+  min-height: 48px;
+  padding: 5px 9px;
+  overflow: auto;
+  border-top: 1px solid #e5e8ec;
+  background: rgba(250, 251, 252, .97);
+}
 .risk { margin: 0; padding: 7px 10px; border-left: 3px solid #d97706; color: #713f12; background: #fff7ed; line-height: 1.35; }
 .status { min-height: 1.35em; margin: 0; padding: 2px 1px; color: #5f6368; line-height: 1.3; }
 
@@ -135,10 +149,16 @@ button, textarea { font: inherit; }
 .outline-cell:hover .branch-actions, .branch-actions:focus-within { opacity: 1; }
 .branch-actions button { width: 24px; min-height: 20px; padding: 0; border-color: #b8bec5; color: #4b5865; background: #fff; font-size: .75rem; line-height: 18px; }
 .branch-actions button:hover { color: #174a72; background: #eaf2f9; }
-.exact-source-button {
+.source-row-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  margin-left: auto;
+}
+.exact-source-button,
+.branch-source-button {
   flex: 0 0 auto;
   min-height: 20px;
-  margin-left: auto;
   padding: 1px 5px;
   border-color: #c6ccd3;
   color: #5e6975;
@@ -149,7 +169,17 @@ button, textarea { font: inherit; }
   transition: opacity .15s ease;
 }
 .outline-cell:hover .exact-source-button,
-.exact-source-button:focus-visible { opacity: 1; }
+.outline-cell:hover .branch-source-button,
+.exact-source-button:focus-visible,
+.branch-source-button:focus-visible { opacity: 1; }
+.exact-source-button.active,
+.branch-source-button.active {
+  border-color: #426e9a;
+  color: #164f7e;
+  background: #e8f2fc;
+  opacity: 1;
+}
+.outline-cell.source-selected { background: #f0f6fc; }
 .empty-state { padding: 9px; }
 
 .editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
@@ -157,6 +187,26 @@ button, textarea { font: inherit; }
 .text-panel label { display: block; margin-bottom: 8px; font-weight: 600; }
 textarea { display: block; width: 100%; min-height: 330px; padding: 12px; resize: vertical; overflow-wrap: break-word; border: 1px solid #aaa; border-radius: 4px; background: #fff; font-family: Consolas, "Courier New", monospace; line-height: 1.5; }
 textarea[readonly] { background: #f2f3f5; }
+[hidden] { display: none !important; }
+.preview-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-weight: 600; }
+.preview-modes { display: flex; gap: 4px; }
+.preview-modes button { min-height: 30px; padding: 4px 9px; color: #53606d; font-size: .75rem; }
+.preview-modes button.active { border-color: #426e9a; color: #164f7e; background: #e8f2fc; font-weight: 700; }
+.rich-preview {
+  min-height: 150px;
+  max-height: min(65vh, 720px);
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid #aaa;
+  border-radius: 4px;
+  background: #fff;
+}
+.rich-preview > :first-child { margin-top: 0; }
+.rich-preview > :last-child { margin-bottom: 0; }
+.rich-preview h1, .rich-preview h2, .rich-preview h3,
+.rich-preview h4, .rich-preview h5, .rich-preview h6 { margin: 1em 0 .5em; }
+.rich-preview p { margin: .75em 0; }
+button:disabled { cursor: not-allowed; opacity: .45; }
 textarea:focus, button:focus-visible { outline: 3px solid #9cc4ff; outline-offset: 2px; }
 button { min-height: 40px; padding: 8px 14px; cursor: pointer; border: 1px solid #777; border-radius: 4px; color: #202124; background: #fff; }
 button:hover { background: #eceff3; }
@@ -210,7 +260,7 @@ button:hover { background: #eceff3; }
   margin-top: 8px;
 }
 
-.quick-source-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.quick-source-strip { grid-template-columns: minmax(0, 1fr); }
 .preset-targets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 .quick-source-strip button,

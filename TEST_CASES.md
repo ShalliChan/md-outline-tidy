@@ -7,7 +7,7 @@
 > 小型交互返工继续覆盖：状态按钮不抢焦点/不请求滚动、19px 默认预设、Hn 与 Hn+ 互斥、
 > Hn+ 相对层级转换、选区匹配、批量正文 preset、无描述标签 ghost 行及 Rich Text metadata。
 >
-> 集中交互修正继续覆盖：连续冒号引导行压缩、“仅此”精确 Source、同名标题 id 区分、
+> 集中交互修正继续覆盖：连续冒号引导行压缩、“选择”精确 Source（原“仅此”）、同名标题 id 区分、
 > Hn+ 真实分支/跳级祖先匹配、四按钮 sticky 布局、正文 Result 左对齐和无主动滚动。
 
 ## 测试约定
@@ -740,3 +740,51 @@
 - 两条控制条 sticky 对齐，随标题结构区域结束而解除；
 - 页面继续整体滚动，不产生结构区内部纵向滚动；
 - 层级选择、取消、实时转换、高亮和 scroll position 行为与迁移前一致。
+---
+
+## V2.5：Rich Paste、复制拆分、多选与分支映射
+
+自动回归共 207 项，其中 V2.5 Rich Paste / 多选整合新增 39 项，封板空白规范化新增 9 项。
+
+### Rich Paste 导入
+
+- 剪贴板同时包含 `text/html` 与 `text/plain`，且 HTML 含 H1～H6 时，优先解析语义化 HTML。
+- HTML 不含 heading、缺少 `text/html` 或解析失败时，回退原生纯文本粘贴。
+- heading 内的 `strong` / `b` 仅保留标题文字，不在 Markdown 标题中产生多余粗体标记。
+- 正文中的 `strong` / `b`、`em` / `i`、无序与有序嵌套列表、行内代码、带可靠语言类名的代码块、链接、`br` 与 blockquote 正确转换。
+- 无语义作用的 `span`、class 与 style 不进入 Markdown。
+- 富文本导入通过既有 `createState` 建立新的 Original / Baseline / Result，并作为一个历史步骤支持 Undo / Redo。
+
+### 独立复制
+
+- “复制富文本”始终生成 `text/html` 与合理的 `text/plain`。
+- “复制 Markdown”只生成当前 Result 的 Markdown 文本。
+- 两种复制结果均不依赖当前 Rich Text / Markdown 预览模式。
+
+### 多选“选择”
+
+- 可按稳定 heading id 多选或取消多个 Result 标题，同名标题不会互相误选。
+- 多选标题可统一映射到目标 H1～H6 或正文预设。
+- 多选 ±1 按每个标题自己的当前层级独立计算，并校验 H1 / H6 边界。
+- 精确多选、层级组来源与“此分支”来源互斥。
+
+### “此分支”
+
+- 分支范围从所选标题开始，在下一个同级或更高级标题前结束。
+- 分支目标层级与 ±1 保持内部相对层级；正文预设覆盖整个分支中的标题。
+- 跨级标题、同名标题和 H1 / H6 边界均按稳定 id 与既有子树规则处理。
+- 边界处的反向 ±1 可以恢复先前偏移。
+
+### 页面级检查
+
+- 顶部说明文字已移除，富文本与 Markdown 复制按钮独立存在。
+- 模拟 Clipboard `paste` 事件可完成富文本导入，并可单步 Undo / Redo。
+- Result 标题行提供“选择”和“此分支”，正文 ghost 行不提供来源按钮。
+- 状态文字变长时固定状态槽高度不变，结构树起始位置不移动。
+### Rich HTML 空白规范化
+
+- Markdown block 之间一个或多个空白行只作为结构分隔，不输出 `<p><br></p>` 或其他空 block。
+- heading / paragraph、paragraph / heading 与列表前后的空白行均归一化为普通 block 边界。
+- fenced code 内部空行和原始换行完整保留。
+- 19px / bold 正文 metadata 继续输出 inline style 与语义化 `strong`。
+- Rich Preview 与 Copy Rich Text 继续共用 `renderRichHtml()`；Markdown Result 与 Copy Markdown 保留原始空行。

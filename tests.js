@@ -197,18 +197,18 @@
   deepEqual('B16: new user input invalidates old metadata', editedRich.baselineMetadata, {});
 
   var dynamic = tool.createState('# A\n## B\ntext\n#### D\n##### E');
-  deepEqual('B17: lowest and second-lowest use existing levels', tool.dynamicSourceLevels(dynamic, full(dynamic)),
-    { lowest: 5, secondLowest: 4 });
+  deepEqual('B17: lowest uses existing heading levels', tool.dynamicSourceLevels(dynamic, full(dynamic)),
+    { lowest: 5 });
   var oneLevel = tool.createState('text\n### A\n### B');
-  deepEqual('B18: one heading level disables second-lowest', tool.dynamicSourceLevels(oneLevel, full(oneLevel)),
-    { lowest: 3, secondLowest: null });
+  deepEqual('B18: one heading level still resolves lowest', tool.dynamicSourceLevels(oneLevel, full(oneLevel)),
+    { lowest: 3 });
   var noLevels = tool.createState('plain text');
-  deepEqual('B19: no headings disables both dynamic sources', tool.dynamicSourceLevels(noLevels, full(noLevels)),
-    { lowest: null, secondLowest: null });
+  deepEqual('B19: no headings disables lowest source', tool.dynamicSourceLevels(noLevels, full(noLevels)),
+    { lowest: null });
   var selectedDynamic = tool.createState('# A\n#### B\n##### C');
   var h4Start = selectedDynamic.baseline.indexOf('#### B');
   deepEqual('B20: dynamic source respects selected range', tool.dynamicSourceLevels(selectedDynamic, { start: h4Start, end: h4Start + 4 }),
-    { lowest: 4, secondLowest: null });
+    { lowest: 4 });
 
   var ghostModel = tool.createState('## Parent\n### Child');
   tool.applyPresetMapping(ghostModel, 2, preset16, full(ghostModel));
@@ -223,7 +223,7 @@
   ok('B25: rich clipboard HTML has font size', payload.html.indexOf('font-size:16px') !== -1);
   ok('B26: rich clipboard HTML has bold weight', payload.html.indexOf('font-weight:700') !== -1);
   var plainPayload = tool.createClipboardPayload(tool.createState('## Plain'));
-  ok('B27: no preset keeps ordinary copy path', !plainPayload.hasRich && plainPayload.html === null);
+  ok('B27: headings now use semantic rich copy path', plainPayload.hasRich && plainPayload.html === '<h2>Plain</h2>');
   var safeHtml = tool.markdownToHtml('```html\n<script>alert(1)</script>\n```', {});
   ok('B28: fenced HTML is escaped in rich renderer', safeHtml.indexOf('&lt;script&gt;') !== -1 && safeHtml.indexOf('<script>') === -1);
 
@@ -362,6 +362,321 @@
   equal('D12: exact Source does not request scrolling', scrollCalls, 0);
   window.scrollTo = originalScrollTo;
 
+  var semanticModel = tool.createState('# H1\n## H2\n### H3\n#### H4\n##### H5\n###### H6');
+  var semanticHtml = tool.renderRichHtml(semanticModel);
+  [1, 2, 3, 4, 5, 6].forEach(function (level) {
+    ok('E' + level + ': rich renderer emits semantic H' + level,
+      semanticHtml.indexOf('<h' + level + '>H' + level + '</h' + level + '>') !== -1);
+  });
+  var richBodyModel = tool.createState('#### Body');
+  tool.applyPresetMapping(richBodyModel, 4, preset19, full(richBodyModel));
+  var richBodyHtml = tool.renderRichHtml(richBodyModel);
+  ok('E7: body preset does not emit a heading', richBodyHtml.indexOf('<h4>') === -1 && richBodyHtml.indexOf('<p ') === 0);
+  ok('E8: 19px non-bold metadata reaches rich HTML',
+    richBodyHtml.indexOf('font-size:19px') !== -1 && richBodyHtml.indexOf('font-weight:400') !== -1);
+  var richBoldModel = tool.createState('#### Bold');
+  tool.applyPresetMapping(richBoldModel, 4, tool.DEFAULT_PRESETS[3], full(richBoldModel));
+  ok('E9: bold metadata reaches rich HTML',
+    tool.renderRichHtml(richBoldModel).indexOf('font-weight:700') !== -1);
+  equal('E10: Preview renderer and clipboard HTML are identical',
+    tool.createClipboardPayload(richBoldModel).html, tool.renderRichHtml(richBoldModel));
+  equal('E11: default preview mode is Rich Text', tool.DEFAULT_PREVIEW_MODE, 'rich');
+
+  var shiftSingleUp = tool.createState('### A');
+  tool.setSourceChoice(shiftSingleUp, 3, 'single', full(shiftSingleUp));
+  ok('F1: H3 source can shift up', tool.shiftSelectedSource(shiftSingleUp, -1));
+  equal('F2: H3 source up renders H2', tool.renderMarkdown(shiftSingleUp), '## A');
+  var shiftSingleDown = tool.createState('### A');
+  tool.setSourceChoice(shiftSingleDown, 3, 'single', full(shiftSingleDown));
+  tool.shiftSelectedSource(shiftSingleDown, 1);
+  equal('F3: H3 source down renders H4', tool.renderMarkdown(shiftSingleDown), '#### A');
+  var shiftPlusUp = tool.createState('### A\n#### B\n##### C');
+  tool.setSourceChoice(shiftPlusUp, 3, 'and-below', full(shiftPlusUp));
+  tool.shiftSelectedSource(shiftPlusUp, -1);
+  equal('F4: H3+ source up preserves relative levels', tool.renderMarkdown(shiftPlusUp), '## A\n### B\n#### C');
+  var shiftPlusDown = tool.createState('### A\n#### B\n##### C');
+  tool.setSourceChoice(shiftPlusDown, 3, 'and-below', full(shiftPlusDown));
+  tool.shiftSelectedSource(shiftPlusDown, 1);
+  equal('F5: H3+ source down preserves relative levels', tool.renderMarkdown(shiftPlusDown), '#### A\n##### B\n###### C');
+  var shiftLowest = tool.createState('## A\n##### B');
+  tool.setSourceChoice(shiftLowest, tool.dynamicSourceLevels(shiftLowest, full(shiftLowest)).lowest, 'single', full(shiftLowest));
+  tool.shiftSelectedSource(shiftLowest, 1);
+  equal('F6: lowest source supports quick demotion', tool.renderMarkdown(shiftLowest), '## A\n###### B');
+  var shiftExact = tool.createState('#### Same\n#### Same');
+  tool.setExactSourceChoice(shiftExact, 1, full(shiftExact));
+  tool.shiftSelectedSource(shiftExact, -1);
+  equal('F7: exact source quick shift keeps heading identity', tool.renderMarkdown(shiftExact), '#### Same\n### Same');
+  var shiftH1 = tool.createState('# A');
+  tool.setSourceChoice(shiftH1, 1, 'single', full(shiftH1));
+  ok('F8: H1 source cannot shift above H1', !tool.selectedSourceCanShift(shiftH1, -1) && !tool.shiftSelectedSource(shiftH1, -1));
+  var shiftH6 = tool.createState('###### A');
+  tool.setSourceChoice(shiftH6, 6, 'single', full(shiftH6));
+  ok('F9: H6 source cannot shift below H6', !tool.selectedSourceCanShift(shiftH6, 1) && !tool.shiftSelectedSource(shiftH6, 1));
+
+  function historyStep(history, model, change) {
+    var before = tool.snapshotState(model);
+    change();
+    tool.pushHistorySnapshot(history, before);
+  }
+
+  var headingHistoryModel = tool.createState('### A');
+  var headingHistory = tool.createHistory(50);
+  historyStep(headingHistory, headingHistoryModel, function () {
+    tool.applyMapping(headingHistoryModel, 3, 2, full(headingHistoryModel));
+  });
+  tool.undoHistory(headingHistory, headingHistoryModel);
+  equal('G1: heading conversion Undo restores previous result', tool.renderMarkdown(headingHistoryModel), '### A');
+  tool.redoHistory(headingHistory, headingHistoryModel);
+  equal('G2: heading conversion Redo restores converted result', tool.renderMarkdown(headingHistoryModel), '## A');
+
+  var plusHistoryModel = tool.createState('### A\n#### B');
+  var plusHistory = tool.createHistory(50);
+  historyStep(plusHistory, plusHistoryModel, function () {
+    tool.applyMapping(plusHistoryModel, 3, 2, full(plusHistoryModel), 'and-below');
+  });
+  tool.undoHistory(plusHistory, plusHistoryModel);
+  tool.redoHistory(plusHistory, plusHistoryModel);
+  equal('G3: Hn+ conversion survives Undo and Redo', tool.renderMarkdown(plusHistoryModel), '## A\n### B');
+
+  var bodyHistoryModel = tool.createState('#### Body');
+  var bodyHistory = tool.createHistory(50);
+  historyStep(bodyHistory, bodyHistoryModel, function () {
+    tool.applyPresetMapping(bodyHistoryModel, 4, preset19, full(bodyHistoryModel));
+  });
+  tool.undoHistory(bodyHistory, bodyHistoryModel);
+  deepEqual('G4: body preset Undo removes pending metadata', tool.renderResult(bodyHistoryModel).metadata, {});
+  tool.redoHistory(bodyHistory, bodyHistoryModel);
+  ok('G5: body preset Redo restores metadata', tool.renderResult(bodyHistoryModel).metadata[0].fontSize === 19);
+
+  var subtreeHistoryModel = tool.createState('### A\n#### B');
+  var subtreeHistory = tool.createHistory(50);
+  historyStep(subtreeHistory, subtreeHistoryModel, function () { tool.changeSubtree(subtreeHistoryModel, 0, -1); });
+  tool.undoHistory(subtreeHistory, subtreeHistoryModel);
+  equal('G6: subtree Undo restores all levels', tool.renderMarkdown(subtreeHistoryModel), '### A\n#### B');
+  tool.redoHistory(subtreeHistory, subtreeHistoryModel);
+  equal('G7: subtree Redo restores relative shift', tool.renderMarkdown(subtreeHistoryModel), '## A\n### B');
+
+  var continueHistoryModel = tool.createState('### A');
+  tool.applyMapping(continueHistoryModel, 3, 2, full(continueHistoryModel));
+  var continueHistory = tool.createHistory(50);
+  historyStep(continueHistory, continueHistoryModel, function () { tool.commitResult(continueHistoryModel); });
+  tool.undoHistory(continueHistory, continueHistoryModel);
+  ok('G8: Continue Undo restores pre-commit Baseline and mapping',
+    continueHistoryModel.baseline === '### A' && tool.renderMarkdown(continueHistoryModel) === '## A');
+  tool.redoHistory(continueHistory, continueHistoryModel);
+  ok('G9: Continue Redo restores committed Baseline', continueHistoryModel.baseline === '## A' && !tool.mappingIsActive(continueHistoryModel));
+
+  var resetHistoryModel = tool.createState('#### Body');
+  tool.applyPresetMapping(resetHistoryModel, 4, preset19, full(resetHistoryModel));
+  tool.commitResult(resetHistoryModel);
+  var resetHistory = tool.createHistory(50);
+  historyStep(resetHistory, resetHistoryModel, function () { tool.resetTransformations(resetHistoryModel); });
+  tool.undoHistory(resetHistory, resetHistoryModel);
+  ok('G10: Reset Undo restores committed text and rich metadata',
+    resetHistoryModel.baseline === 'Body' && resetHistoryModel.baselineMetadata[0].fontSize === 19);
+
+  var clearHistoryModel = tool.createState('## Keep');
+  var clearHistory = tool.createHistory(50);
+  historyStep(clearHistory, clearHistoryModel, function () {
+    tool.restoreState(clearHistoryModel, tool.createState(''));
+  });
+  tool.undoHistory(clearHistory, clearHistoryModel);
+  equal('G11: Clear Undo restores the complete document', clearHistoryModel.original, '## Keep');
+
+  var branchModel = tool.createState('### A');
+  var branchHistory = tool.createHistory(50);
+  historyStep(branchHistory, branchModel, function () { tool.applyMapping(branchModel, 3, 2, full(branchModel)); });
+  tool.undoHistory(branchHistory, branchModel);
+  historyStep(branchHistory, branchModel, function () { tool.applyMapping(branchModel, 3, 4, full(branchModel)); });
+  ok('G12: new operation after Undo clears Redo branch', branchHistory.redo.length === 0 && !tool.redoHistory(branchHistory, branchModel));
+
+  var passiveHistoryModel = tool.createState('## A');
+  var passiveHistory = tool.createHistory(50);
+  tool.renderRichHtml(passiveHistoryModel);
+  tool.createClipboardPayload(passiveHistoryModel);
+  ok('G13: Preview and Copy do not enter application history',
+    passiveHistory.undo.length === 0 && passiveHistory.redo.length === 0);
+  var snapshotIdentityModel = tool.createState('#### Same\n#### Same');
+  tool.setExactSourceChoice(snapshotIdentityModel, 1, full(snapshotIdentityModel));
+  var identitySnapshot = tool.snapshotState(snapshotIdentityModel);
+  tool.setExactSourceChoice(snapshotIdentityModel, 0, full(snapshotIdentityModel));
+  tool.restoreState(snapshotIdentityModel, identitySnapshot);
+  deepEqual('G14: snapshots preserve exact heading identity and Source state',
+    tool.mappingAffectedHeadingIds(snapshotIdentityModel), [1]);
+  var richDecision = tool.importClipboardContent('<h1><b>Title</b></h1>', 'Title');
+  ok('H1: semantic heading HTML selects Rich Import', richDecision.usedRich && richDecision.headingCount === 1);
+  var plainDecision = tool.importClipboardContent('<p><strong>Body</strong></p>', 'Plain body');
+  deepEqual('H2: HTML without semantic headings falls back to plain text', plainDecision,
+    { text: 'Plain body', usedRich: false, headingCount: 0 });
+  equal('H3: rich importer maps H1 through H6',
+    tool.richHtmlToMarkdown('<h1>A</h1><h2>B</h2><h3>C</h3><h4>D</h4><h5>E</h5><h6>F</h6>'),
+    '# A\n\n## B\n\n### C\n\n#### D\n\n##### E\n\n###### F');
+  equal('H4: heading strong and b wrappers do not create bold Markdown',
+    tool.richHtmlToMarkdown('<h2><span class="s1"><b>Bold visual title</b></span></h2>'),
+    '## Bold visual title');
+  equal('H5: paragraph strong and b remain bold',
+    tool.richHtmlToMarkdown('<h1>Title</h1><p><strong>A</strong> and <b>B</b></p>'),
+    '# Title\n\n**A** and **B**');
+  equal('H6: paragraph em and i remain italic',
+    tool.richHtmlToMarkdown('<h1>Title</h1><p><em>A</em> and <i>B</i></p>'),
+    '# Title\n\n*A* and *B*');
+  equal('H7: unordered list imports as Markdown list',
+    tool.richHtmlToMarkdown('<h1>Title</h1><ul><li>A</li><li>B</li></ul>'),
+    '# Title\n\n- A\n- B');
+  equal('H8: ordered list imports as Markdown list',
+    tool.richHtmlToMarkdown('<h1>Title</h1><ol><li>A</li><li>B</li></ol>'),
+    '# Title\n\n1. A\n2. B');
+  equal('H9: nested lists receive basic indentation',
+    tool.richHtmlToMarkdown('<h1>Title</h1><ul><li>A<ul><li>B</li></ul></li></ul>'),
+    '# Title\n\n- A\n  - B');
+  var inlineTick = String.fromCharCode(96);
+  equal('H10: inline code imports with inline fences',
+    tool.richHtmlToMarkdown('<h1>Title</h1><p>Use <code>x()</code> now</p>'),
+    '# Title\n\nUse ' + inlineTick + 'x()' + inlineTick + ' now');
+  var tick = String.fromCharCode(96);
+  equal('H11: pre code imports as fenced block with reliable language',
+    tool.richHtmlToMarkdown('<h1>Title</h1><pre><code class="language-js">const x = 1;</code></pre>'),
+    '# Title\n\n' + tick + tick + tick + 'js\nconst x = 1;\n' + tick + tick + tick);
+  equal('H12: links preserve text and href',
+    tool.richHtmlToMarkdown('<h1>Title</h1><p><a href="https://example.com">Example</a></p>'),
+    '# Title\n\n[Example](https://example.com)');
+  equal('H13: semantic blockquote imports with quote markers',
+    tool.richHtmlToMarkdown('<h1>Title</h1><blockquote><p>A</p><p>B</p></blockquote>'),
+    '# Title\n\n> A\n>\n> B');
+  equal('H14: visual span class and style wrappers are ignored',
+    tool.richHtmlToMarkdown('<div class="p1"><h1><span class="s1" style="color:red"><b>Title</b></span></h1><p><span class="s2">Body</span></p></div>'),
+    '# Title\n\nBody');
+  deepEqual('H15: importer error safely falls back to plain text',
+    tool.importClipboardContent('<h1>Title</h1>', 'Plain fallback', function () { throw new Error('test'); }),
+    { text: 'Plain fallback', usedRich: false, headingCount: 0 });
+
+  var pasteHistoryModel = tool.createState('## Before');
+  var pasteHistory = tool.createHistory(50);
+  var pasteBefore = tool.snapshotState(pasteHistoryModel);
+  tool.restoreState(pasteHistoryModel, tool.createState(richDecision.text));
+  tool.pushHistorySnapshot(pasteHistory, pasteBefore);
+  tool.undoHistory(pasteHistory, pasteHistoryModel);
+  equal('H16: Rich Paste is one Undo history step', pasteHistoryModel.original, '## Before');
+  tool.redoHistory(pasteHistory, pasteHistoryModel);
+  equal('H17: Rich Paste Redo restores imported Markdown', pasteHistoryModel.original, '# Title');
+
+  var copyModeModel = tool.createState('## Copy');
+  equal('I1: Rich copy HTML uses the unified renderer',
+    tool.createClipboardPayload(copyModeModel).html, tool.renderRichHtml(copyModeModel));
+  deepEqual('I2: Markdown copy contains only current Markdown text',
+    tool.createMarkdownClipboardPayload(copyModeModel), { plain: '## Copy', html: null, hasRich: false });
+  equal('I3: preview mode does not change Rich copy type',
+    tool.createClipboardPayload(copyModeModel).html, '<h2>Copy</h2>');
+  equal('I4: preview mode does not change Markdown copy type',
+    tool.createMarkdownClipboardPayload(copyModeModel).plain, '## Copy');
+
+  var exactMulti = tool.createState('## Same\n#### Same\n### Other');
+  tool.setExactSourceChoice(exactMulti, 0, full(exactMulti));
+  tool.setExactSourceChoice(exactMulti, 1, full(exactMulti));
+  deepEqual('J1: same-title headings can be selected by stable ids',
+    tool.mappingAffectedHeadingIds(exactMulti), [0, 1]);
+  tool.setExactSourceChoice(exactMulti, 0, full(exactMulti));
+  deepEqual('J2: exact selection toggles independently', tool.mappingAffectedHeadingIds(exactMulti), [1]);
+  tool.setExactSourceChoice(exactMulti, 0, full(exactMulti));
+  tool.setMappingChoice(exactMulti, 'target', 2, full(exactMulti));
+  equal('J3: multiple different levels map to one target',
+    tool.renderMarkdown(exactMulti), '## Same\n## Same\n### Other');
+
+  var exactBody = tool.createState('## A\n#### B\n### C');
+  tool.setExactSourceChoice(exactBody, 0, full(exactBody));
+  tool.setExactSourceChoice(exactBody, 2, full(exactBody));
+  tool.setPresetChoice(exactBody, preset19, full(exactBody));
+  equal('J4: exact multi selection maps to body preset', tool.renderMarkdown(exactBody), 'A\n#### B\nC');
+  deepEqual('J5: exact multi body metadata maps selected lines only',
+    Object.keys(tool.renderResult(exactBody).metadata).map(Number), [0, 2]);
+
+  var exactShiftUp = tool.createState('### A\n##### B');
+  tool.setExactSourceChoice(exactShiftUp, 0, full(exactShiftUp));
+  tool.setExactSourceChoice(exactShiftUp, 1, full(exactShiftUp));
+  tool.shiftSelectedSource(exactShiftUp, -1);
+  equal('J6: exact multi selection promotes each current level',
+    tool.renderMarkdown(exactShiftUp), '## A\n#### B');
+  var exactShiftDown = tool.createState('### A\n##### B');
+  tool.setExactSourceChoice(exactShiftDown, 0, full(exactShiftDown));
+  tool.setExactSourceChoice(exactShiftDown, 1, full(exactShiftDown));
+  tool.shiftSelectedSource(exactShiftDown, 1);
+  equal('J7: exact multi selection demotes each current level',
+    tool.renderMarkdown(exactShiftDown), '#### A\n###### B');
+  var exactBoundaries = tool.createState('# A\n###### B');
+  tool.setExactSourceChoice(exactBoundaries, 0, full(exactBoundaries));
+  tool.setExactSourceChoice(exactBoundaries, 1, full(exactBoundaries));
+  ok('J8: exact multi respects H1 and H6 quick-shift boundaries',
+    !tool.selectedSourceCanShift(exactBoundaries, -1) && !tool.selectedSourceCanShift(exactBoundaries, 1));
+  tool.setSourceChoice(exactMulti, 3, 'single', full(exactMulti));
+  ok('J9: Group Source clears exact multi selection',
+    exactMulti.mappingHeadingIds.length === 0 && exactMulti.mappingSource === 3);
+  tool.setExactSourceChoice(exactMulti, 2, full(exactMulti));
+  ok('J10: starting exact selection clears Group Source',
+    exactMulti.mappingSource === null && exactMulti.mappingHeadingIds[0] === 2);
+
+  var branchModel = tool.createState('# A\n## B\n### C\n## D\n# E\n### Skip');
+  tool.setBranchSourceChoice(branchModel, 1, full(branchModel));
+  deepEqual('K1: branch Source contains root and true descendants only',
+    tool.mappingAffectedHeadingIds(branchModel), [1, 2]);
+  tool.setBranchSourceChoice(branchModel, 0, full(branchModel));
+  deepEqual('K2: branch stops at next same-level heading and includes skipped descendants',
+    tool.mappingAffectedHeadingIds(branchModel), [0, 1, 2, 3]);
+  tool.setBranchSourceChoice(branchModel, 1, full(branchModel));
+  tool.setMappingChoice(branchModel, 'target', 1, full(branchModel));
+  equal('K3: branch to heading preserves relative levels',
+    tool.renderMarkdown(branchModel), '# A\n# B\n## C\n## D\n# E\n### Skip');
+
+  var branchBody = tool.createState('### Root\n#### Child\n## Stop');
+  tool.setBranchSourceChoice(branchBody, 0, full(branchBody));
+  tool.setPresetChoice(branchBody, preset16, full(branchBody));
+  equal('K4: branch maps every member to body preset',
+    tool.renderMarkdown(branchBody), 'Root\nChild\n## Stop');
+  deepEqual('K5: branch body metadata covers branch lines',
+    Object.keys(tool.renderResult(branchBody).metadata).map(Number), [0, 1]);
+
+  var branchShift = tool.createState('# Root\n###### Child\n# Stop');
+  tool.setBranchSourceChoice(branchShift, 0, full(branchShift));
+  tool.shiftSelectedSource(branchShift, -1);
+  equal('K6: branch quick shift uses reversible boundary offsets',
+    tool.renderMarkdown(branchShift), '# Root\n##### Child\n# Stop');
+  tool.shiftSelectedSource(branchShift, 1);
+  equal('K7: reversing branch quick shift restores original levels',
+    tool.renderMarkdown(branchShift), '# Root\n###### Child\n# Stop');
+  var sameBranchNames = tool.createState('### Same\n#### Child\n### Same\n#### Other');
+  tool.setBranchSourceChoice(sameBranchNames, 2, full(sameBranchNames));
+  deepEqual('K8: same-title branch root uses stable heading id',
+    tool.mappingAffectedHeadingIds(sameBranchNames), [2, 3]);
+
+  var oneBlankParagraphs = tool.createState('First paragraph.\n\nSecond paragraph.');
+  equal('L1: one Markdown blank line separates paragraphs without an empty Rich block',
+    tool.renderRichHtml(oneBlankParagraphs), '<p>First paragraph.</p><p>Second paragraph.</p>');
+  var manyBlankParagraphs = tool.createState('First paragraph.\n\n\n\nSecond paragraph.');
+  equal('L2: consecutive Markdown blank lines normalize to the same Rich block boundary',
+    tool.renderRichHtml(manyBlankParagraphs), tool.renderRichHtml(oneBlankParagraphs));
+  equal('L3: heading and paragraph boundary has no empty Rich paragraph',
+    tool.renderRichHtml(tool.createState('## Heading\n\nBody.')), '<h2>Heading</h2><p>Body.</p>');
+  equal('L4: paragraph followed by heading has no meaningless Rich break',
+    tool.renderRichHtml(tool.createState('Body.\n\n## Heading')), '<p>Body.</p><h2>Heading</h2>');
+  equal('L5: blank lines around a list do not add empty items or paragraphs',
+    tool.renderRichHtml(tool.createState('Before.\n\n- A\n- B\n\nAfter.')),
+    '<p>Before.</p><ul><li>A</li><li>B</li></ul><p>After.</p>');
+  var fenceMarker = String.fromCharCode(96) + String.fromCharCode(96) + String.fromCharCode(96);
+  equal('L6: fenced code preserves all internal line breaks during Rich normalization',
+    tool.renderRichHtml(tool.createState('Before.\n\n' + fenceMarker + '\nline 1\n\nline 3\n' + fenceMarker + '\n\nAfter.')),
+    '<p>Before.</p><pre><code>line 1\n\nline 3</code></pre><p>After.</p>');
+  var richWhitespacePreset = tool.createState('## Styled\n\nTail.');
+  tool.setExactSourceChoice(richWhitespacePreset, 0, full(richWhitespacePreset));
+  tool.setPresetChoice(richWhitespacePreset, tool.DEFAULT_PRESETS[3], full(richWhitespacePreset));
+  equal('L7: 19px bold body metadata survives Rich whitespace normalization',
+    tool.renderRichHtml(richWhitespacePreset),
+    '<p style="margin:0;font-size:19px;font-weight:700;"><strong>Styled</strong></p><p>Tail.</p>');
+  equal('L8: Copy Rich Text still uses the same normalized renderer as Rich Preview',
+    tool.createClipboardPayload(manyBlankParagraphs).html, tool.renderRichHtml(manyBlankParagraphs));
+  var untouchedMarkdown = 'First paragraph.\n\n\nSecond paragraph.';
+  var untouchedMarkdownModel = tool.createState(untouchedMarkdown);
+  deepEqual('L9: Rich normalization does not change Markdown Result or Copy Markdown',
+    [tool.renderMarkdown(untouchedMarkdownModel), tool.createMarkdownClipboardPayload(untouchedMarkdownModel).plain],
+    [untouchedMarkdown, untouchedMarkdown]);
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');
