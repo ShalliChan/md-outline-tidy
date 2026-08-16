@@ -1,69 +1,63 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Markdown Heading Tool V2</title>
+  <title>Markdown Heading Tool V3</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="container">
   <header class="page-header">
     <h1>Markdown Heading Tool</h1>
-
+    <span id="heading-count" class="sr-only" aria-live="polite">0 headings</span>
   </header>
 
-  <section id="analysis-panel" class="analysis" aria-labelledby="structure-title">
-    <div class="analysis-heading">
-      <div class="analysis-title"><h2 id="structure-title">标题结构</h2><span id="heading-count" class="badge">0 个标题</span></div>
-      <button id="structure-toggle" class="collapse-toggle" type="button" aria-expanded="true" aria-controls="analysis-content">收起</button>
-    </div>
+  <section id="analysis-panel" class="analysis" aria-label="Heading structure workspace">
     <div id="analysis-content" class="analysis-content">
-      <div class="structure-mapping-bar" aria-label="指定层级转换">
+      <div class="structure-mapping-bar">
         <div class="tree-control-pane">
-          <span class="tree-control-label">源层级</span>
-          <div id="source-levels" class="level-strip" aria-label="选择源层级">
-            <span class="source-level-pair"><button type="button" data-level="1" data-source-mode="single">H1</button><button type="button" data-level="1" data-source-mode="and-below" aria-label="H1 及以下">H1+</button></span>
-            <span class="source-level-pair"><button type="button" data-level="2" data-source-mode="single">H2</button><button type="button" data-level="2" data-source-mode="and-below" aria-label="H2 及以下">H2+</button></span>
-            <span class="source-level-pair"><button type="button" data-level="3" data-source-mode="single">H3</button><button type="button" data-level="3" data-source-mode="and-below" aria-label="H3 及以下">H3+</button></span>
-            <span class="source-level-pair"><button type="button" data-level="4" data-source-mode="single">H4</button><button type="button" data-level="4" data-source-mode="and-below" aria-label="H4 及以下">H4+</button></span>
-            <span class="source-level-pair"><button type="button" data-level="5" data-source-mode="single">H5</button><button type="button" data-level="5" data-source-mode="and-below" aria-label="H5 及以下">H5+</button></span>
-            <span class="source-level-pair"><button type="button" data-level="6" data-source-mode="single">H6</button><button type="button" data-level="6" data-source-mode="and-below" aria-label="H6 及以下">H6+</button></span>
+          <span class="tree-control-label">Source Level</span>
+          <div id="source-levels" class="level-strip source-levels" aria-label="Choose source level">
+            <span class="source-level-pair"><button type="button" data-level="1" data-source-mode="single">H1</button><button type="button" data-level="1" data-source-mode="and-below" aria-label="H1 and below">H1+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="2" data-source-mode="single">H2</button><button type="button" data-level="2" data-source-mode="and-below" aria-label="H2 and below">H2+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="3" data-source-mode="single">H3</button><button type="button" data-level="3" data-source-mode="and-below" aria-label="H3 and below">H3+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="4" data-source-mode="single">H4</button><button type="button" data-level="4" data-source-mode="and-below" aria-label="H4 and below">H4+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="5" data-source-mode="single">H5</button><button type="button" data-level="5" data-source-mode="and-below" aria-label="H5 and below">H5+</button></span>
+            <span class="source-level-pair"><button type="button" data-level="6" data-source-mode="single">H6</button><button type="button" data-level="6" data-source-mode="and-below" aria-label="H6 and below">H6+</button></span>
           </div>
-          <div class="quick-source-strip" aria-label="动态源层级">
-            <button id="lowest-level" type="button" data-quick-source="lowest">最低层级</button>
-          </div>
+          <div class="quick-source-strip"><button id="lowest-level" type="button" data-quick-source="lowest">Minimum Level</button></div>
         </div>
+
         <div class="tree-control-pane">
-          <span class="tree-control-label">目标层级</span>
-          <div id="target-levels" class="level-strip" aria-label="选择目标层级">
+          <span class="tree-control-label">Target Level</span>
+          <div id="target-levels" class="level-strip target-levels" aria-label="Choose target level">
             <button type="button" data-level="1">H1</button><button type="button" data-level="2">H2</button><button type="button" data-level="3">H3</button><button type="button" data-level="4">H4</button><button type="button" data-level="5">H5</button><button type="button" data-level="6">H6</button>
           </div>
-          <div id="preset-targets" class="preset-targets" aria-label="选择正文预设"></div>
+          <div id="preset-targets" class="preset-targets" aria-label="Choose body preset"></div>
         </div>
+
         <div class="mapping-footer">
-          <p id="mapping-status" class="mapping-status">请选择源层级和目标层级。</p>
-          <div class="sticky-actions" aria-label="状态与内容操作">
-            <div class="sticky-action-group">
-              <button id="source-up-button" type="button" disabled>升一级</button>
-              <button id="source-down-button" type="button" disabled>降一级</button>
+          <p id="mapping-status" class="sr-only" aria-live="polite"></p>
+          <div class="sticky-actions" aria-label="Editing toolbar">
+            <div class="copy-split">
+              <button id="copy-rich-button" class="copy-main" type="button">Copy Rich Text</button>
+              <button id="copy-menu-button" class="copy-menu-toggle" type="button" aria-label="More copy options" aria-haspopup="menu" aria-expanded="false">▾</button>
+              <div id="copy-menu" class="copy-menu" role="menu" hidden><button id="copy-rich-option" type="button" role="menuitemradio">Copy Rich Text</button><button id="copy-markdown-button" type="button" role="menuitemradio">Copy Markdown</button></div>
+            </div>
+            <span class="toolbar-spacer" aria-hidden="true"></span>
+            <div class="sticky-action-group icon-group">
+              <button id="undo-button" class="icon-button" type="button" title="Undo" aria-label="Undo" disabled>↶</button>
+              <button id="redo-button" class="icon-button" type="button" title="Redo" aria-label="Redo" disabled>↷</button>
             </div>
             <span class="toolbar-divider" aria-hidden="true"></span>
-            <div class="sticky-action-group">
-              <button id="undo-button" type="button" disabled>Undo</button>
-              <button id="redo-button" type="button" disabled>Redo</button>
+            <div class="sticky-action-group icon-group">
+              <button id="source-up-button" class="icon-button heading-shift" type="button" title="Promote selected headings" aria-label="Promote selected headings" disabled><span>H</span>↑</button>
+              <button id="source-down-button" class="icon-button heading-shift" type="button" title="Demote selected headings" aria-label="Demote selected headings" disabled><span>H</span>↓</button>
             </div>
             <span class="toolbar-divider" aria-hidden="true"></span>
-            <div class="sticky-action-group">
-              <button id="continue-button" class="primary-action" type="button">以当前结果继续</button>
-              <button id="reset-button" class="reset-action" type="button">重置转换</button>
-            </div>
-            <span class="toolbar-divider" aria-hidden="true"></span>
-            <div class="sticky-action-group">
-              <button id="copy-rich-button" type="button">复制富文本</button>
-              <button id="copy-markdown-button" type="button">复制 Markdown</button>
-              <button id="clear-button" type="button">清空内容</button>
-            </div>
+            <button id="reset-button" class="reset-action" type="button">Reset</button>
+            <button id="continue-button" class="primary-action" type="button">Continue from Here</button>
           </div>
         </div>
         <div id="sticky-status-slot" class="notice-area sticky-status-slot" aria-live="polite">
@@ -71,40 +65,32 @@
           <p id="status-message" class="status" role="status"></p>
         </div>
       </div>
-      <div id="structure-view" class="structure-view"><p class="empty-state">输入 Markdown 后将在这里显示标题结构。</p></div>
+
+      <div class="tree-labels" aria-hidden="true"><span>Before</span><span>After</span></div>
+      <div id="structure-view" class="structure-view"><p class="empty-state">Add Markdown to see its heading structure.</p></div>
     </div>
   </section>
 
-  <section class="utility-panel" aria-labelledby="cleanup-title">
-    <div class="utility-row">
-      <strong id="cleanup-title">文本整理</strong>
-      <button id="remove-breaks-button" type="button">删除分隔线</button>
-      <button id="compress-guide-lines-button" type="button">压缩引导行</button>
-    </div>
-  </section>
+  <section class="utility-panel" aria-label="Text cleanup"><div class="utility-row">
+    <button id="remove-breaks-button" type="button">Remove Dividers</button>
+    <button id="compress-guide-lines-button" type="button">Compress Guide Lines</button>
+  </div></section>
 
-  <section class="editor" aria-label="Markdown 标题处理区">
-    <div class="text-panel"><label for="markdown-input">当前基准 Markdown</label><textarea id="markdown-input" placeholder="在此输入 Markdown 内容" spellcheck="false"></textarea></div>
+  <section class="editor" aria-label="Markdown editing workspace">
+    <div class="text-panel"><label for="markdown-input">Input Markdown</label><textarea id="markdown-input" placeholder="Paste or type Markdown here" spellcheck="false"></textarea></div>
     <div class="text-panel result-panel">
-      <div class="preview-heading">
-        <span id="result-preview-label">当前结果预览</span>
-        <div class="preview-modes" role="group" aria-label="结果预览模式">
-          <button id="rich-preview-button" type="button" class="active" aria-pressed="true">Rich Text</button>
-          <button id="markdown-preview-button" type="button" aria-pressed="false">Markdown</button>
-        </div>
-      </div>
+      <div class="preview-heading"><span id="result-preview-label">Result Preview</span><div class="preview-modes" role="group" aria-label="Preview mode">
+        <button id="markdown-preview-button" type="button" aria-pressed="false">Markdown</button>
+        <button id="rich-preview-button" type="button" class="active" aria-pressed="true">Rich Text</button>
+      </div></div>
       <div id="rich-preview" class="rich-preview" aria-labelledby="result-preview-label" aria-live="polite"></div>
       <textarea id="markdown-output" class="markdown-preview" readonly aria-labelledby="result-preview-label" aria-live="polite" hidden></textarea>
     </div>
   </section>
 
-  <section class="preset-settings" aria-label="正文预设设置">
-    <details class="preset-manager">
-      <summary>管理正文预设</summary>
-      <div id="preset-editor"></div>
-      <button id="add-preset-button" type="button">新建预设</button>
-    </details>
-  </section>
+  <section class="preset-settings" aria-label="Body preset settings"><details class="preset-manager">
+    <summary>Manage Body Presets</summary><div id="preset-editor"></div><button id="add-preset-button" type="button">New Body Preset</button>
+  </details></section>
 </main>
 <script src="script.js"></script>
 </body>

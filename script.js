@@ -783,10 +783,12 @@ function redoHistory(history, model) {
   return true;
 }
 
-function bodyGhostHtml(heading, impactClass) {
-  return '<div class="outline-cell body-ghost is-changed' + (impactClass ? ' ' + impactClass : '') +
+function bodyGhostHtml(heading, impactClass, selectionClass) {
+  return '<div class="outline-cell body-ghost is-changed' +
+    (selectionClass ? ' source-selected ' + selectionClass : '') +
+    (impactClass ? ' ' + impactClass : '') +
     '"><div class="body-ghost-content"><span class="outline-text">' +
-    escapeHtml(heading.text || '（空标题）') + '</span></div></div>';
+    escapeHtml(heading.text || '(Untitled)') + '</span></div></div>';
 }
 
 var HeadingTool = {
@@ -868,8 +870,11 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var riskMessage = document.getElementById('risk-message');
   var statusMessage = document.getElementById('status-message');
   var mappingStatus = document.getElementById('mapping-status');
-  var analysisPanel = document.getElementById('analysis-panel');
-  var structureToggle = document.getElementById('structure-toggle');
+  var copyMenuButton = document.getElementById('copy-menu-button');
+  var copyMenu = document.getElementById('copy-menu');
+  var copyMainButton = document.getElementById('copy-rich-button');
+  var copyRichOption = document.getElementById('copy-rich-option');
+  var copyMarkdownOption = document.getElementById('copy-markdown-button');
   var sourceLevels = document.getElementById('source-levels');
   var targetLevels = document.getElementById('target-levels');
   var presetTargets = document.getElementById('preset-targets');
@@ -882,6 +887,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var state = createState('');
   var appHistory = createHistory(50);
   var previewMode = DEFAULT_PREVIEW_MODE;
+  var copyMode = 'rich';
   var lastInputAt = 0;
   var lastImpact = null;
   var customPresets = loadCustomPresets();
@@ -967,7 +973,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     lastInputAt = 0;
     clearImpact();
     render();
-    setStatus(direction === 'undo' ? '已撤销上一步应用操作' : '已重做下一步应用操作');
+    setStatus(direction === 'undo' ? 'Undid the previous action' : 'Redid the next action');
   }
 
   function setPreviewMode(mode) {
@@ -984,62 +990,91 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
 
   function autoSizeEditors() {
     var maximum = Math.max(260, Math.min(window.innerHeight * 0.65, 720));
-    [input, output].forEach(function (editor) {
-      editor.style.height = 'auto';
-      editor.style.height = Math.min(maximum, Math.max(150, editor.scrollHeight)) + 'px';
-      editor.style.overflowY = editor.scrollHeight > maximum ? 'auto' : 'hidden';
+    var editors = [input, output, richPreview];
+    editors.forEach(function (editor) { editor.style.height = 'auto'; });
+    var desired = Math.min(maximum, Math.max(170, input.scrollHeight, output.scrollHeight, richPreview.scrollHeight));
+    editors.forEach(function (editor) {
+      editor.style.height = desired + 'px';
+      editor.style.overflowY = editor.scrollHeight > desired ? 'auto' : 'hidden';
+    });
+  }
+
+  function snapHorizontalConnectors() {
+    var ratio = window.devicePixelRatio || 1;
+    var physicalThickness = Math.max(1, Math.round(2 * ratio));
+    var cssThickness = physicalThickness / ratio;
+    Array.prototype.forEach.call(structure.querySelectorAll('.horizontal-connector'), function (connector) {
+      var row = connector.parentElement.getBoundingClientRect();
+      var topDevicePixel = Math.round((row.top + row.height / 2) * ratio - physicalThickness / 2);
+      connector.style.top = (topDevicePixel / ratio - row.top) + 'px';
+      connector.style.height = cssThickness + 'px';
     });
   }
 
   function renderPath(path, continuations) {
     return '<span class="dot-path" style="--path-count:' + path.length + '" aria-label="' +
-      path.map(function (present, index) { return 'H' + (index + 1) + (present ? ' 存在' : ' 缺失'); }).join('，') +
+      path.map(function (present, index) { return 'H' + (index + 1) + (present ? ' present' : ' missing'); }).join(', ') +
       '">' + path.map(function (present, index) {
         return '<span class="path-dot ' + (present ? 'present' : 'missing') +
           (continuations[index] ? ' path-continues' : ' path-ends') + '">' + (present ? '●' : '○') + '</span>';
       }).join('') + '</span>';
   }
 
-  function outlineCell(text, level, path, continuations, changed, headingId, actionsEnabled, impactClass, continues, sourceActionsEnabled) {
+  function outlineCell(text, level, path, continuations, changed, headingId, actionsEnabled, impactClass, continues, sourceActionsEnabled, selectionClass) {
     var actions = actionsEnabled
       ? '<span class="branch-actions"><button type="button" data-action="subtree-up" data-heading-id="' + headingId +
-        '" title="当前标题及子树提升一级">↑</button><button type="button" data-action="subtree-down" data-heading-id="' +
-        headingId + '" title="当前标题及子树降低一级">↓</button></span>' : '';
+        '" title="Promote this heading and branch" aria-label="Promote this heading and branch">↑</button>' +
+        '<button type="button" data-action="subtree-down" data-heading-id="' + headingId +
+        '" title="Demote this heading and branch" aria-label="Demote this heading and branch">↓</button></span>' : '';
     var exactSelected = state.mappingSourceMode === 'exact' && state.mappingHeadingIds.indexOf(headingId) !== -1;
     var branchSelected = state.mappingSourceMode === 'branch' && state.mappingBranchRootId === headingId;
     var sourceActions = sourceActionsEnabled
       ? '<span class="source-row-actions"><button type="button" class="exact-source-button' +
         (exactSelected ? ' active' : '') + '" data-action="source-select" data-heading-id="' + headingId +
-        '" aria-pressed="' + String(exactSelected) + '" title="切换选择当前标题">选择</button>' +
+        '" aria-pressed="' + String(exactSelected) + '" title="Select this heading" aria-label="Select this heading">✓</button>' +
         '<button type="button" class="branch-source-button' + (branchSelected ? ' active' : '') +
         '" data-action="branch-source" data-heading-id="' + headingId + '" aria-pressed="' +
-        String(branchSelected) + '" title="选择当前标题及其真实后代">此分支</button></span>' : '';
+        String(branchSelected) + '" title="Select this branch" aria-label="Select this branch">✓✓</button></span>' : '';
     return '<div class="outline-cell level-' + level + (changed ? ' is-changed' : '') +
-      (exactSelected || branchSelected ? ' source-selected' : '') +
-      (impactClass ? ' ' + impactClass : '') + '"><div class="outline-node">' +
+      (selectionClass ? ' source-selected ' + selectionClass : '') +
+      (impactClass ? ' ' + impactClass : '') + '"><div class="outline-node" style="--path-count:' +
+      path.length + '"><span class="horizontal-connector" aria-hidden="true"></span>' +
       renderPath(path, continuations) +
-      '<span class="current-node' + (continues ? ' continues' : '') + '" aria-hidden="true"></span>' +
+      '<span class="current-axis' + (continues ? ' continues' : '') + '" aria-hidden="true">' +
+      '<span class="current-node"></span></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
-      '<span class="level-name">H' + level + '</span>' + sourceActions + actions + '</div></div>';
+      '<span class="level-name">H' + level + '</span>' + actions + sourceActions + '</div></div>';
+  }
+
+  function displayPresetName(preset) {
+    if (!preset || !preset.builtIn) return preset ? preset.name : '';
+    return preset.fontSize + 'px ' + (preset.bold ? 'Bold' : 'Regular');
   }
 
   function renderPresetControls() {
-    var presets = allPresets();
+    var presets = allPresets().slice().sort(function (a, b) {
+      if (!a.builtIn || !b.builtIn) return Number(b.builtIn) - Number(a.builtIn);
+      return a.fontSize - b.fontSize || Number(a.bold) - Number(b.bold);
+    });
     presetTargets.innerHTML = presets.map(function (preset) {
       var active = state.mappingPreset && state.mappingPreset.id === preset.id;
       return '<button type="button" data-preset-id="' + escapeHtml(preset.id) + '" class="' +
         (active ? 'active' : '') + '" aria-pressed="' + String(Boolean(active)) + '">' +
-        escapeHtml(preset.name) + '</button>';
+        escapeHtml(displayPresetName(preset)) + '</button>';
     }).join('');
-    presetEditor.innerHTML = DEFAULT_PRESETS.map(function (preset) {
-      return '<div class="preset-edit-row built-in"><span>' + escapeHtml(preset.name) +
-        '</span><span>' + preset.fontSize + 'px' + (preset.bold ? ' · 加粗' : '') + '</span></div>';
+    presetEditor.innerHTML = DEFAULT_PRESETS.slice().sort(function (a, b) {
+      return a.fontSize - b.fontSize || Number(a.bold) - Number(b.bold);
+    }).map(function (preset) {
+      return '<div class="preset-edit-row built-in"><span class="preset-row-name">' +
+        escapeHtml(displayPresetName(preset)) + '</span><span class="preset-row-size">' +
+        preset.fontSize + 'px</span><span class="preset-row-weight">' +
+        (preset.bold ? 'Bold' : 'Regular') + '</span><span aria-hidden="true"></span></div>';
     }).concat(customPresets.map(function (preset) {
       return '<div class="preset-edit-row" data-edit-preset="' + escapeHtml(preset.id) + '">' +
-        '<input data-field="name" value="' + escapeHtml(preset.name) + '" aria-label="预设名称">' +
-        '<input data-field="fontSize" type="number" min="8" max="96" value="' + preset.fontSize + '" aria-label="字号">' +
-        '<label><input data-field="bold" type="checkbox"' + (preset.bold ? ' checked' : '') + '> 加粗</label>' +
-        '<button type="button" data-delete-preset="' + escapeHtml(preset.id) + '">删除</button></div>';
+        '<input data-field="name" value="' + escapeHtml(preset.name) + '" aria-label="Preset name">' +
+        '<input data-field="fontSize" type="number" min="8" max="96" value="' + preset.fontSize + '" aria-label="Font size">' +
+        '<label><input data-field="bold" type="checkbox"' + (preset.bold ? ' checked' : '') + '> Bold</label>' +
+        '<button type="button" data-delete-preset="' + escapeHtml(preset.id) + '">Delete</button></div>';
     })).join('');
   }
 
@@ -1058,7 +1093,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     var dynamic = dynamicSourceLevels(state, currentRange());
     lowestButton.disabled = dynamic.lowest === null;
     lowestButton.dataset.level = dynamic.lowest === null ? '' : dynamic.lowest;
-    lowestButton.textContent = dynamic.lowest === null ? '最低层级' : '最低层级 H' + dynamic.lowest;
+    lowestButton.textContent = dynamic.lowest === null ? 'Minimum Level' : 'Minimum Level H' + dynamic.lowest;
     lowestButton.classList.toggle('active', !lowestButton.disabled &&
       Number(lowestButton.dataset.level) === state.mappingSource && state.mappingSourceMode === 'single');
     sourceUpButton.disabled = !selectedSourceCanShift(state, -1);
@@ -1067,19 +1102,20 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     renderPresetControls();
     var sourceLabel = '';
     if (state.mappingSourceMode === 'exact' && state.mappingHeadingIds.length) {
-      sourceLabel = '已选 ' + state.mappingHeadingIds.length + ' 条';
+      sourceLabel = 'Selected ' + state.mappingHeadingIds.length +
+        (state.mappingHeadingIds.length === 1 ? ' heading' : ' headings');
     } else if (state.mappingSourceMode === 'branch' && state.mappingBranchRootId !== null) {
-      sourceLabel = '此分支：' + (state.headings[state.mappingBranchRootId].text || '空标题');
+      sourceLabel = 'This Branch: ' + (state.headings[state.mappingBranchRootId].text || 'Untitled');
     } else if (state.mappingSource !== null) {
       sourceLabel = 'H' + state.mappingSource + (state.mappingSourceMode === 'and-below' ? '+' : '');
     }
     if (mappingIsActive(state)) {
-      mappingStatus.textContent = '实时转换：' + sourceLabel + ' → ' +
-        (state.mappingPreset ? state.mappingPreset.name + ' 正文' : 'H' + state.mappingTarget);
+      mappingStatus.textContent = 'Live conversion: ' + sourceLabel + ' → ' +
+        (state.mappingPreset ? state.mappingPreset.name + ' body' : 'H' + state.mappingTarget);
     } else if (sourceLabel) {
-      mappingStatus.textContent = sourceLabel + ' · 请选择目标';
+      mappingStatus.textContent = sourceLabel + ' · choose a target';
     } else {
-      mappingStatus.textContent = '请选择 Source 和目标；只选择一侧时不会转换。';
+      mappingStatus.textContent = 'Choose a source and target to transform headings.';
     }
   }
 
@@ -1087,48 +1123,57 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     var result = renderResult(state);
     output.value = result.text;
     richPreview.innerHTML = renderRichHtml(state);
-    count.textContent = state.headings.length + ' 个标题';
+    count.textContent = state.headings.length + (state.headings.length === 1 ? ' heading' : ' headings');
     renderMappingControls();
     if (!state.headings.length) {
-      structure.innerHTML = '<p class="empty-state">未发现符合规则的 ATX 标题。</p>';
+      structure.innerHTML = '<p class="empty-state">No valid ATX headings found.</p>';
     } else {
       var remaining = state.headings.filter(function (heading) { return !headingConvertsToBody(state, heading); });
       var beforePaths = ancestorPaths(state.headings.map(function (heading) { return heading.level; }));
       var beforeContinuations = ancestorContinuations(beforePaths);
       var remainingPaths = ancestorPaths(remaining.map(function (heading) { return targetLevel(state, heading); }));
       var remainingContinuations = ancestorContinuations(remainingPaths);
+      var selectedHeadingIds = mappingAffectedHeadingIds(state);
       var afterPathById = {};
       remaining.forEach(function (heading, index) {
         afterPathById[heading.id] = { path: remainingPaths[index], continuation: remainingContinuations[index], index: index };
       });
-      structure.innerHTML = '<div class="outline-header"><span>当前基准 / 转换前</span><span>当前结果 / 转换后</span></div>' +
-        '<ol class="outline-rows">' + state.headings.map(function (heading, index) {
+      structure.innerHTML = '<ol class="outline-rows">' + state.headings.map(function (heading, index) {
           var affected = lastImpact && lastImpact.ids.indexOf(heading.id) !== -1;
           var beforeImpact = affected ? 'impact impact-' + lastImpact.type + ' impact-before' : '';
           var showAfter = affected && (lastImpact.type !== 'mapping' || mappingIsActive(state));
           var afterImpact = showAfter ? 'impact impact-' + lastImpact.type + ' impact-after' : '';
+          var selected = selectedHeadingIds.indexOf(heading.id) !== -1;
+          var previousSelected = index > 0 && heading.level !== 1 &&
+            selectedHeadingIds.indexOf(state.headings[index - 1].id) !== -1;
+          var nextSelected = index < state.headings.length - 1 && state.headings[index + 1].level !== 1 &&
+            selectedHeadingIds.indexOf(state.headings[index + 1].id) !== -1;
+          var selectionClass = !selected ? '' : !previousSelected && !nextSelected ? 'selected-single' :
+            !previousSelected ? 'selected-start' : !nextSelected ? 'selected-end' : 'selected-middle';
           var beforeContinues = Boolean(beforePaths[index + 1] && beforePaths[index + 1][heading.level - 1]);
-          var before = outlineCell(escapeHtml(heading.text || '（空标题）'), heading.level, beforePaths[index],
-            beforeContinuations[index], false, heading.id, false, beforeImpact, beforeContinues, false);
+          var before = outlineCell(escapeHtml(heading.text || '(Untitled)'), heading.level, beforePaths[index],
+            beforeContinuations[index], false, heading.id, false, beforeImpact, beforeContinues, false, selectionClass);
           if (headingConvertsToBody(state, heading)) {
-            return '<li class="outline-row">' + before + bodyGhostHtml(heading, afterImpact) + '</li>';
+            return '<li class="outline-row' + (heading.level === 1 ? ' h1-branch-start' : '') +
+              '" data-heading-id="' + heading.id + '">' + before + bodyGhostHtml(heading, afterImpact, selectionClass) + '</li>';
           }
           var info = afterPathById[heading.id];
           var target = targetLevel(state, heading);
           var nextRemaining = remaining[info.index + 1];
           var afterContinues = Boolean(nextRemaining && info.path && afterPathById[nextRemaining.id].path[target - 1]);
-          return '<li class="outline-row">' + before +
-            outlineCell(escapeHtml(heading.text || '（空标题）'), target, info.path, info.continuation,
-              target !== heading.level, heading.id, true, afterImpact, afterContinues, true) + '</li>';
+          return '<li class="outline-row' + (heading.level === 1 ? ' h1-branch-start' : '') +
+            '" data-heading-id="' + heading.id + '">' + before + outlineCell(escapeHtml(heading.text || '(Untitled)'), target, info.path, info.continuation,
+              target !== heading.level, heading.id, true, afterImpact, afterContinues, true, selectionClass) + '</li>';
         }).join('') + '</ol>';
     }
+    snapHorizontalConnectors();
     var inversionRisks = findRisks(state);
     var bodyRisks = findBodyConversionRisks(state);
     var messages = [];
-    if (inversionRisks.length) messages.push('发现 ' + inversionRisks.length + ' 处可能的层级倒置。');
-    if (bodyRisks.length) messages.push('转换为正文后，' + bodyRisks.length + ' 个标题下仍存在子标题，原父级结构将消失。');
+    if (inversionRisks.length) messages.push('Found ' + inversionRisks.length + ' possible hierarchy inversions.');
+    if (bodyRisks.length) messages.push('After body conversion, ' + bodyRisks.length + ' headings still have descendants; their parent structure will be removed.');
     riskMessage.hidden = messages.length === 0;
-    riskMessage.textContent = messages.join(' ') + (messages.length ? ' 转换仍可继续。' : '');
+    riskMessage.textContent = messages.join(' ') + (messages.length ? ' You can still continue.' : '');
     autoSizeEditors();
   }
 
@@ -1144,7 +1189,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, true);
     updateMappingImpact();
     render();
-    setStatus(mappingIsActive(state) ? '指定转换已实时生效' : '源层级已更新；请选择目标');
+    setStatus(mappingIsActive(state) ? 'Heading conversion applied' : 'Source updated; choose a target');
   }
 
   function writeRichSelectionFallback(html, plain) {
@@ -1214,7 +1259,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     lastInputAt = 0;
     clearImpact();
     render();
-    setStatus('已识别富文本结构 · ' + imported.headingCount + ' 个标题');
+    setStatus('Rich text structure recognized · ' + imported.headingCount + ' headings');
   });
   input.addEventListener('input', function (event) {
     var now = Date.now();
@@ -1225,7 +1270,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     state = createState(input.value);
     clearImpact();
     render();
-    setStatus(state.headings.length ? '已根据新输入建立新的 Original 和 Baseline；旧正文样式已安全清除' : '');
+    setStatus(state.headings.length ? 'Created a new Original and Baseline; previous body styles were cleared' : '');
   });
 
   sourceLevels.addEventListener('click', function (event) {
@@ -1248,7 +1293,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, true);
     updateMappingImpact();
     render();
-    setStatus(mappingIsActive(state) ? '标题层级转换已实时生效' : '目标层级已更新；请选择源');
+    setStatus(mappingIsActive(state) ? 'Heading level conversion applied' : 'Target updated; choose a source');
   });
 
   presetTargets.addEventListener('click', function (event) {
@@ -1261,7 +1306,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, true);
     updateMappingImpact();
     render();
-    setStatus(mappingIsActive(state) ? '标题转正文已实时生效' : '正文预设已更新；请选择源');
+    setStatus(mappingIsActive(state) ? 'Body conversion applied' : 'Body preset updated; choose a source');
   });
 
   structure.addEventListener('click', function (event) {
@@ -1276,8 +1321,8 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       updateMappingImpact();
       render();
       setStatus(state.mappingHeadingIds.length
-        ? '已选择 ' + state.mappingHeadingIds.length + ' 条具体标题'
-        : '已取消具体标题选择');
+        ? 'Selected ' + state.mappingHeadingIds.length + (state.mappingHeadingIds.length === 1 ? ' heading' : ' headings')
+        : 'Heading selection cleared');
       return;
     }
     if (button.dataset.action === 'branch-source') {
@@ -1287,8 +1332,8 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       updateMappingImpact();
       render();
       setStatus(state.mappingBranchRootId === null
-        ? '已取消分支 Source'
-        : '已选择“' + (heading.text || '空标题') + '”及其分支作为 Source');
+        ? 'Branch selection cleared'
+        : 'Selected “' + (heading.text || 'Untitled') + '” and its branch');
       return;
     }
     if (button.dataset.action !== 'subtree-up' && button.dataset.action !== 'subtree-down') return;
@@ -1299,8 +1344,8 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, false);
     setImpact('subtree', ids);
     render();
-    setStatus('已将“' + (state.headings[headingId].text || '空标题') + '”及其子树' +
-      (delta < 0 ? '提升' : '降低') + '一级');
+    setStatus('Changed “' + (state.headings[headingId].text || 'Untitled') + '” and its branch ' +
+      (delta < 0 ? 'promoted ' : 'demoted ') + 'one level');
   });
 
   document.getElementById('continue-button').addEventListener('click', function () {
@@ -1309,7 +1354,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, false);
     clearImpact();
     render();
-    setStatus('当前文本及正文样式已成为新的 Baseline；Original 保持不变');
+    setStatus('The current result is now the Baseline; Original is unchanged');
   });
 
   document.getElementById('reset-button').addEventListener('click', function () {
@@ -1318,14 +1363,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, false);
     clearImpact();
     render();
-    setStatus('已恢复最初 Original，并清除全部正文样式与多轮状态');
+    setStatus('Restored Original and cleared all body styles and transformation state');
   });
 
-  structureToggle.addEventListener('click', function () {
-    var collapsed = analysisPanel.classList.toggle('is-collapsed');
-    structureToggle.setAttribute('aria-expanded', String(!collapsed));
-    structureToggle.textContent = collapsed ? '展开' : '收起';
-  });
 
   sourceUpButton.addEventListener('click', function () {
     if (sourceUpButton.disabled) return;
@@ -1333,7 +1373,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     performStateMutation(function () { shiftSelectedSource(state, -1); }, false);
     setImpact('source-shift', ids);
     render();
-    setStatus('已将当前 Source 提升一级');
+    setStatus('Promoted the current source one level');
   });
 
   sourceDownButton.addEventListener('click', function () {
@@ -1342,7 +1382,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     performStateMutation(function () { shiftSelectedSource(state, 1); }, false);
     setImpact('source-shift', ids);
     render();
-    setStatus('已将当前 Source 降低一级');
+    setStatus('Demoted the current source one level');
   });
 
   undoButton.addEventListener('click', function () { restoreHistoryDirection('undo'); });
@@ -1350,54 +1390,85 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   richPreviewButton.addEventListener('click', function () { setPreviewMode('rich'); });
   markdownPreviewButton.addEventListener('click', function () { setPreviewMode('markdown'); });
 
-  document.getElementById('copy-rich-button').addEventListener('click', async function () {
-    var payload = createClipboardPayload(state);
-    if (!payload.plain) { setStatus('没有可复制的内容'); return; }
+  function closeCopyMenu() {
+    copyMenu.hidden = true;
+    copyMenuButton.setAttribute('aria-expanded', 'false');
+  }
 
+  function setCopyMode(mode) {
+    copyMode = mode === 'markdown' ? 'markdown' : 'rich';
+    var rich = copyMode === 'rich';
+    copyMainButton.textContent = rich ? 'Copy Rich Text' : 'Copy Markdown';
+    copyMainButton.setAttribute('aria-label', rich ? 'Copy Rich Text' : 'Copy Markdown');
+    copyRichOption.classList.toggle('active', rich);
+    copyMarkdownOption.classList.toggle('active', !rich);
+    copyRichOption.setAttribute('aria-checked', String(rich));
+    copyMarkdownOption.setAttribute('aria-checked', String(!rich));
+  }
+
+  async function copyRichContent() {
+    var payload = createClipboardPayload(state);
+    if (!payload.plain) { setStatus('Nothing to copy'); return; }
     try {
       if (!navigator.clipboard || !navigator.clipboard.write || typeof ClipboardItem === 'undefined') {
-        throw new Error('ClipboardItem 不可用');
+        throw new Error('ClipboardItem unavailable');
       }
       await navigator.clipboard.write([new ClipboardItem({
         'text/plain': new Blob([payload.plain], { type: 'text/plain' }),
         'text/html': new Blob([payload.html], { type: 'text/html' })
       })]);
-      setStatus('已复制富文本');
+      setStatus('Rich text copied');
     } catch (error) {
       try {
         writeRichSelectionFallback(payload.html, payload.plain);
-        setStatus('已通过兼容模式复制富文本');
+        setStatus('Rich text copied in compatibility mode');
       } catch (fallbackError) {
-        setStatus('富文本复制失败，请重试或切换浏览器权限');
+        setStatus('Could not copy rich text; check browser permissions');
       }
     }
-  });
+  }
 
-  document.getElementById('copy-markdown-button').addEventListener('click', async function () {
+  async function copyMarkdownContent() {
     var payload = createMarkdownClipboardPayload(state);
-    if (!payload.plain) { setStatus('没有可复制的内容'); return; }
+    if (!payload.plain) { setStatus('Nothing to copy'); return; }
     try {
-      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard API 不可用');
+      if (!navigator.clipboard || !navigator.clipboard.writeText) throw new Error('Clipboard API unavailable');
       await navigator.clipboard.writeText(payload.plain);
-      setStatus('已复制 Markdown');
+      setStatus('Markdown copied');
     } catch (error) {
       try {
         writePlainTextFallback(payload.plain);
-        setStatus('已通过兼容模式复制 Markdown');
+        setStatus('Markdown copied in compatibility mode');
       } catch (fallbackError) {
-        setStatus('Markdown 复制失败，请在预览中手动复制');
+        setStatus('Could not copy Markdown; copy it from the preview');
       }
     }
+  }
+
+  function copyCurrentMode() {
+    return copyMode === 'markdown' ? copyMarkdownContent() : copyRichContent();
+  }
+
+  copyMenuButton.addEventListener('click', function () {
+    var willOpen = copyMenu.hidden;
+    copyMenu.hidden = !willOpen;
+    copyMenuButton.setAttribute('aria-expanded', String(willOpen));
+    if (willOpen) copyMenu.querySelector('.active').focus();
   });
 
-  document.getElementById('clear-button').addEventListener('click', function () {
-    performStateMutation(function () {
-      input.value = '';
-      state = createState('');
-    }, false);
-    clearImpact();
-    render();
-    setStatus('');
+  document.addEventListener('click', function (event) {
+    if (!event.target.closest('.copy-split')) closeCopyMenu();
+  });
+  copyMainButton.addEventListener('click', function () { copyCurrentMode(); });
+  copyRichOption.addEventListener('click', function () {
+    setCopyMode('rich');
+    closeCopyMenu();
+    copyCurrentMode();
+  });
+  copyMarkdownOption.addEventListener('click', function () {
+    setCopyMode('markdown');
+    closeCopyMenu();
+    copyCurrentMode();
   });
 
   document.getElementById('remove-breaks-button').addEventListener('click', function () {
@@ -1407,7 +1478,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, false);
     clearImpact();
     render();
-    setStatus(text === state.baseline ? '没有发现可删除的分隔线' : '已在 Result 中删除分隔线；确认后写入 Baseline');
+    setStatus(text === state.baseline ? 'No dividers found' : 'Dividers removed from Result; continue to update Baseline');
   });
 
   document.getElementById('compress-guide-lines-button').addEventListener('click', function () {
@@ -1417,13 +1488,13 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     }, false);
     clearImpact();
     render();
-    setStatus(text === state.baseline ? '没有发现可压缩的连续引导行' : '已在 Result 中压缩引导行；确认后写入 Baseline');
+    setStatus(text === state.baseline ? 'No consecutive guide lines found' : 'Guide lines compressed in Result; continue to update Baseline');
   });
 
   document.getElementById('add-preset-button').addEventListener('click', function () {
     customPresets.push({
       id: 'custom-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7),
-      name: '新正文预设',
+      name: 'New Body Preset',
       fontSize: 16,
       bold: false,
       builtIn: false
@@ -1440,7 +1511,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     var field = event.target.dataset.field;
     if (field === 'fontSize') preset.fontSize = Math.max(8, Math.min(96, Number(event.target.value) || 16));
     else if (field === 'bold') preset.bold = event.target.checked;
-    else if (field === 'name') preset.name = event.target.value.trim() || '未命名预设';
+    else if (field === 'name') preset.name = event.target.value.trim() || 'Untitled Preset';
     if (state.mappingPreset && state.mappingPreset.id === preset.id) state.mappingPreset = Object.assign({}, preset);
     savePresets();
     render();
@@ -1456,7 +1527,11 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     render();
   });
 
-  window.addEventListener('resize', autoSizeEditors);
+  window.addEventListener('resize', function () {
+    autoSizeEditors();
+    snapHorizontalConnectors();
+  });
   setPreviewMode(DEFAULT_PREVIEW_MODE);
+  setCopyMode('rich');
   render();
 }
