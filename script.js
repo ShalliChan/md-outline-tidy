@@ -279,10 +279,25 @@ function setSourceChoice(model, level, mode, range) {
 function setExactSourceChoice(model, headingId, range) {
   var heading = model.headings[headingId];
   if (!heading) return;
-  var ids = model.mappingSourceMode === 'exact' ? model.mappingHeadingIds.slice() : [];
+  var ids = mappingAffectedHeadingIds(model);
   var existingIndex = ids.indexOf(headingId);
   if (existingIndex === -1) ids.push(headingId);
   else ids.splice(existingIndex, 1);
+  model.mappingSource = null;
+  model.mappingSourceMode = 'exact';
+  model.mappingHeadingIds = ids;
+  model.mappingHeadingId = ids.length === 1 ? ids[0] : null;
+  model.mappingBranchRootId = null;
+  model.mappingRange = range;
+}
+
+function getDescendantHeadingIds(model, headingId) {
+  return getSubtreeHeadingIds(model, headingId).slice(1);
+}
+
+function setDescendantsSourceChoice(model, headingId, range) {
+  if (!model.headings[headingId]) return;
+  var ids = getDescendantHeadingIds(model, headingId);
   model.mappingSource = null;
   model.mappingSourceMode = 'exact';
   model.mappingHeadingIds = ids;
@@ -440,6 +455,55 @@ function removeThematicBreaks(markdown) {
     fence = nextFence;
   });
   return output.join('\n');
+}
+
+function removeInlineCodeFromLine(line) {
+  function isEscaped(position) {
+    var slashes = 0;
+    for (var slashIndex = position - 1; slashIndex >= 0 && line[slashIndex] === '\\'; slashIndex -= 1) slashes += 1;
+    return slashes % 2 === 1;
+  }
+  var runs = [];
+  var index = 0;
+  while (index < line.length) {
+    if (line[index] !== '`') { index += 1; continue; }
+    var end = index + 1;
+    while (end < line.length && line[end] === '`') end += 1;
+    if (!isEscaped(index)) runs.push({ start: index, end: end, length: end - index });
+    index = end;
+  }
+  var output = '';
+  var cursor = 0;
+  for (var runIndex = 0; runIndex < runs.length; runIndex += 1) {
+    var opening = runs[runIndex];
+    var closingIndex = runIndex + 1;
+    while (closingIndex < runs.length && runs[closingIndex].length !== opening.length) closingIndex += 1;
+    if (closingIndex >= runs.length) continue;
+    var closing = runs[closingIndex];
+    output += line.slice(cursor, opening.start) + line.slice(opening.end, closing.start);
+    cursor = closing.end;
+    runIndex = closingIndex;
+  }
+  return output + line.slice(cursor);
+}
+
+function removeInlineCode(markdown) {
+  var fence = null;
+  return markdown.split('\n').map(function (line) {
+    var wasInFence = Boolean(fence);
+    var nextFence = fenceStep(line, fence);
+    var isFenceLine = nextFence !== fence;
+    var output = wasInFence || isFenceLine ? line : removeInlineCodeFromLine(line);
+    fence = nextFence;
+    return output;
+  }).join('\n');
+}
+
+function proportionalScrollTop(source, target) {
+  var sourceRange = Math.max(0, source.scrollHeight - source.clientHeight);
+  var targetRange = Math.max(0, target.scrollHeight - target.clientHeight);
+  if (!sourceRange || !targetRange) return 0;
+  return targetRange * Math.max(0, Math.min(1, source.scrollTop / sourceRange));
 }
 
 function isSpecialBlock(line, inFence) {
@@ -817,6 +881,8 @@ var HeadingTool = {
   setMappingChoice: setMappingChoice,
   setSourceChoice: setSourceChoice,
   setExactSourceChoice: setExactSourceChoice,
+  getDescendantHeadingIds: getDescendantHeadingIds,
+  setDescendantsSourceChoice: setDescendantsSourceChoice,
   setBranchSourceChoice: setBranchSourceChoice,
   setPresetChoice: setPresetChoice,
   clearRoundTransforms: clearRoundTransforms,
@@ -833,6 +899,8 @@ var HeadingTool = {
   shiftSelectedSource: shiftSelectedSource,
   isThematicBreak: isThematicBreak,
   removeThematicBreaks: removeThematicBreaks,
+  removeInlineCode: removeInlineCode,
+  proportionalScrollTop: proportionalScrollTop,
   isGuideLine: isGuideLine,
   compressGuideLines: compressGuideLines,
   mergeShortParagraphs: mergeShortParagraphs,
@@ -891,6 +959,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var lastInputAt = 0;
   var lastImpact = null;
   var customPresets = loadCustomPresets();
+  var scrollSyncLocked = false;
 
   function safeStorageGet(key, fallback) {
     try {
@@ -986,6 +1055,18 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     richPreviewButton.setAttribute('aria-pressed', String(rich));
     markdownPreviewButton.setAttribute('aria-pressed', String(!rich));
     autoSizeEditors();
+    syncScroll(input, rich ? richPreview : output);
+  }
+
+  function activePreview() {
+    return previewMode === 'rich' ? richPreview : output;
+  }
+
+  function syncScroll(source, target) {
+    if (scrollSyncLocked || !source || !target) return;
+    scrollSyncLocked = true;
+    target.scrollTop = proportionalScrollTop(source, target);
+    window.requestAnimationFrame(function () { scrollSyncLocked = false; });
   }
 
   function autoSizeEditors() {
@@ -1026,15 +1107,19 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
         '" title="Promote this heading and branch" aria-label="Promote this heading and branch">↑</button>' +
         '<button type="button" data-action="subtree-down" data-heading-id="' + headingId +
         '" title="Demote this heading and branch" aria-label="Demote this heading and branch">↓</button></span>' : '';
-    var exactSelected = state.mappingSourceMode === 'exact' && state.mappingHeadingIds.indexOf(headingId) !== -1;
-    var branchSelected = state.mappingSourceMode === 'branch' && state.mappingBranchRootId === headingId;
+    var exactSelected = mappingAffectedHeadingIds(state).indexOf(headingId) !== -1;
+    var descendantIds = getDescendantHeadingIds(state, headingId);
+    var descendantsSelected = descendantIds.length > 0 && descendantIds.every(function (id) {
+      return state.mappingSourceMode === 'exact' && state.mappingHeadingIds.indexOf(id) !== -1;
+    });
     var sourceActions = sourceActionsEnabled
       ? '<span class="source-row-actions"><button type="button" class="exact-source-button' +
         (exactSelected ? ' active' : '') + '" data-action="source-select" data-heading-id="' + headingId +
-        '" aria-pressed="' + String(exactSelected) + '" title="Select this heading" aria-label="Select this heading">✓</button>' +
-        '<button type="button" class="branch-source-button' + (branchSelected ? ' active' : '') +
-        '" data-action="branch-source" data-heading-id="' + headingId + '" aria-pressed="' +
-        String(branchSelected) + '" title="Select this branch" aria-label="Select this branch">✓✓</button></span>' : '';
+        '" aria-pressed="' + String(exactSelected) + '" title="' + (exactSelected ? 'Deselect this heading' : 'Select this heading') +
+        '" aria-label="' + (exactSelected ? 'Deselect this heading' : 'Select this heading') + '">✓</button>' +
+        '<button type="button" class="branch-source-button' + (descendantsSelected ? ' active' : '') +
+        '" data-action="select-descendants" data-heading-id="' + headingId + '" aria-pressed="' +
+        String(descendantsSelected) + '" title="Select descendants" aria-label="Select descendants"><svg class="row-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h7a3 3 0 0 1 3 3v2"/><path d="m12 16 3 3 5-6"/></svg></button></span>' : '';
     return '<div class="outline-cell level-' + level + (changed ? ' is-changed' : '') +
       (selectionClass ? ' source-selected ' + selectionClass : '') +
       (impactClass ? ' ' + impactClass : '') + '"><div class="outline-node" style="--path-count:' +
@@ -1043,7 +1128,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       '<span class="current-axis' + (continues ? ' continues' : '') + '" aria-hidden="true">' +
       '<span class="current-node"></span></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
-      '<span class="level-name">H' + level + '</span>' + actions + sourceActions + '</div></div>';
+      '<span class="level-name">H' + level + '</span>' + sourceActions + actions + '</div></div>';
   }
 
   function displayPresetName(preset) {
@@ -1180,6 +1265,42 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   function updateMappingImpact() {
     if (!hasSourceSelection(state)) clearImpact();
     else setImpact('mapping', mappingAffectedHeadingIds(state));
+  }
+
+  function captureContinueLayout() {
+    var survivingRows = Array.prototype.filter.call(structure.querySelectorAll('.outline-row'), function (row) {
+      var heading = state.headings[Number(row.dataset.headingId)];
+      return heading && !headingConvertsToBody(state, heading);
+    });
+    return {
+      rows: survivingRows.map(function (row) { return row.getBoundingClientRect().top; }),
+      followers: [
+        document.querySelector('.utility-panel'),
+        document.querySelector('.editor'),
+        document.querySelector('.preset-settings')
+      ].map(function (element) {
+        return { element: element, top: element.getBoundingClientRect().top };
+      })
+    };
+  }
+
+  function animateContinueReposition(beforeLayout) {
+    if (!beforeLayout || !Element.prototype.animate ||
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var animationOptions = { duration: 190, easing: 'cubic-bezier(.2, .7, .2, 1)' };
+    var rows = structure.querySelectorAll('.outline-row');
+    Array.prototype.forEach.call(rows, function (row, index) {
+      var previousTop = beforeLayout.rows[index];
+      if (previousTop === undefined) return;
+      var delta = previousTop - row.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) return;
+      row.animate([{ transform: 'translateY(' + delta + 'px)' }, { transform: 'translateY(0)' }], animationOptions);
+    });
+    beforeLayout.followers.forEach(function (item) {
+      var delta = item.top - item.element.getBoundingClientRect().top;
+      if (Math.abs(delta) < 1) return;
+      item.element.animate([{ transform: 'translateY(' + delta + 'px)' }, { transform: 'translateY(0)' }], animationOptions);
+    });
   }
 
   function chooseSource(level, mode) {
@@ -1325,15 +1446,15 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
         : 'Heading selection cleared');
       return;
     }
-    if (button.dataset.action === 'branch-source') {
+    if (button.dataset.action === 'select-descendants') {
       performStateMutation(function () {
-        setBranchSourceChoice(state, headingId, { start: 0, end: state.baseline.length });
+        setDescendantsSourceChoice(state, headingId, { start: 0, end: state.baseline.length });
       }, true);
       updateMappingImpact();
       render();
-      setStatus(state.mappingBranchRootId === null
-        ? 'Branch selection cleared'
-        : 'Selected “' + (heading.text || 'Untitled') + '” and its branch');
+      setStatus(state.mappingHeadingIds.length
+        ? 'Selected ' + state.mappingHeadingIds.length + (state.mappingHeadingIds.length === 1 ? ' descendant' : ' descendants')
+        : 'This heading has no descendants');
       return;
     }
     if (button.dataset.action !== 'subtree-up' && button.dataset.action !== 'subtree-down') return;
@@ -1349,11 +1470,13 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   });
 
   document.getElementById('continue-button').addEventListener('click', function () {
+    var beforeLayout = captureContinueLayout();
     performStateMutation(function () {
       continueStateWithoutNavigation(state, input);
     }, false);
     clearImpact();
     render();
+    animateContinueReposition(beforeLayout);
     setStatus('The current result is now the Baseline; Original is unchanged');
   });
 
@@ -1389,6 +1512,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   redoButton.addEventListener('click', function () { restoreHistoryDirection('redo'); });
   richPreviewButton.addEventListener('click', function () { setPreviewMode('rich'); });
   markdownPreviewButton.addEventListener('click', function () { setPreviewMode('markdown'); });
+  input.addEventListener('scroll', function () { syncScroll(input, activePreview()); });
+  richPreview.addEventListener('scroll', function () { syncScroll(richPreview, input); });
+  output.addEventListener('scroll', function () { syncScroll(output, input); });
 
   function closeCopyMenu() {
     copyMenu.hidden = true;
@@ -1489,6 +1615,16 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     clearImpact();
     render();
     setStatus(text === state.baseline ? 'No consecutive guide lines found' : 'Guide lines compressed in Result; continue to update Baseline');
+  });
+
+  document.getElementById('remove-inline-code-button').addEventListener('click', function () {
+    var text = removeInlineCode(state.baseline);
+    if (text !== state.baseline) performStateMutation(function () {
+      applyTextResult(state, text);
+    }, false);
+    clearImpact();
+    render();
+    setStatus(text === state.baseline ? 'No inline code found' : 'Inline code delimiters removed from Result; continue to update Baseline');
   });
 
   document.getElementById('add-preset-button').addEventListener('click', function () {

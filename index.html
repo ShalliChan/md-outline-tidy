@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Markdown Heading Tool V3</title>
+  <title>Markdown Tool_V3.1</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <main class="container">
   <header class="page-header">
-    <h1>Markdown Heading Tool</h1>
+    <h1>Markdown Tool_V3.1</h1>
     <span id="heading-count" class="sr-only" aria-live="polite">0 headings</span>
   </header>
 
@@ -47,8 +47,8 @@
             </div>
             <span class="toolbar-spacer" aria-hidden="true"></span>
             <div class="sticky-action-group icon-group">
-              <button id="undo-button" class="icon-button" type="button" title="Undo" aria-label="Undo" disabled>↶</button>
-              <button id="redo-button" class="icon-button" type="button" title="Redo" aria-label="Redo" disabled>↷</button>
+              <button id="undo-button" class="icon-button" type="button" title="Undo" aria-label="Undo" disabled><svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 5 11l4 4"/><path d="M5 11h8a6 6 0 0 1 6 6"/></svg></button>
+              <button id="redo-button" class="icon-button" type="button" title="Redo" aria-label="Redo" disabled><svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 7 4 4-4 4"/><path d="M19 11h-8a6 6 0 0 0-6 6"/></svg></button>
             </div>
             <span class="toolbar-divider" aria-hidden="true"></span>
             <div class="sticky-action-group icon-group">
@@ -74,6 +74,7 @@
   <section class="utility-panel" aria-label="Text cleanup"><div class="utility-row">
     <button id="remove-breaks-button" type="button">Remove Dividers</button>
     <button id="compress-guide-lines-button" type="button">Compress Guide Lines</button>
+    <button id="remove-inline-code-button" type="button">Remove Inline Code</button>
   </div></section>
 
   <section class="editor" aria-label="Markdown editing workspace">
@@ -83,7 +84,7 @@
         <button id="markdown-preview-button" type="button" aria-pressed="false">Markdown</button>
         <button id="rich-preview-button" type="button" class="active" aria-pressed="true">Rich Text</button>
       </div></div>
-      <div id="rich-preview" class="rich-preview" aria-labelledby="result-preview-label" aria-live="polite"></div>
+      <div id="rich-preview" class="rich-preview" tabindex="0" aria-labelledby="result-preview-label" aria-live="polite"></div>
       <textarea id="markdown-output" class="markdown-preview" readonly aria-labelledby="result-preview-label" aria-live="polite" hidden></textarea>
     </div>
   </section>

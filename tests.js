@@ -611,8 +611,8 @@
   ok('J9: Group Source clears exact multi selection',
     exactMulti.mappingHeadingIds.length === 0 && exactMulti.mappingSource === 3);
   tool.setExactSourceChoice(exactMulti, 2, full(exactMulti));
-  ok('J10: starting exact selection clears Group Source',
-    exactMulti.mappingSource === null && exactMulti.mappingHeadingIds[0] === 2);
+  ok('J10: exact row action deselects a heading selected by Group Source',
+    exactMulti.mappingSource === null && exactMulti.mappingSourceMode === 'exact' && exactMulti.mappingHeadingIds.length === 0);
 
   var branchModel = tool.createState('# A\n## B\n### C\n## D\n# E\n### Skip');
   tool.setBranchSourceChoice(branchModel, 1, full(branchModel));
@@ -677,6 +677,68 @@
   deepEqual('L9: Rich normalization does not change Markdown Result or Copy Markdown',
     [tool.renderMarkdown(untouchedMarkdownModel), tool.createMarkdownClipboardPayload(untouchedMarkdownModel).plain],
     [untouchedMarkdown, untouchedMarkdown]);
+
+  equal('M1: body inline code delimiters are removed',
+    tool.removeInlineCode('Please click `Copy Rich Text`.'), 'Please click Copy Rich Text.');
+  equal('M2: heading inline code delimiters are removed',
+    tool.removeInlineCode('## Use `Reset`'), '## Use Reset');
+  equal('M3: multiple inline-code spans and delimiter lengths are supported',
+    tool.removeInlineCode('Use ``a`b`` and `c`.'), 'Use a`b and c.');
+  var inlineFence = 'Before `x`\n```js\nconst value = `kept`;\n```\nAfter `y`';
+  equal('M4: fenced code remains unchanged while surrounding inline code is cleaned',
+    tool.removeInlineCode(inlineFence), 'Before x\n```js\nconst value = `kept`;\n```\nAfter y');
+  equal('M5: normal Markdown blocks remain intact around inline code',
+    tool.removeInlineCode('- Keep **bold** and `code`\n> Quote `value`'), '- Keep **bold** and code\n> Quote value');
+  equal('M6: escaped literal backticks are not treated as inline code',
+    tool.removeInlineCode('Keep \\`literal\\` and remove `code`'), 'Keep \\`literal\\` and remove code');
+  var inlineHistoryModel = tool.createState('## Use `Reset`\nBody `value`');
+  var inlineHistory = tool.createHistory(50);
+  historyStep(inlineHistory, inlineHistoryModel, function () {
+    tool.applyTextResult(inlineHistoryModel, tool.removeInlineCode(inlineHistoryModel.baseline));
+  });
+  equal('M7: Remove Inline Code produces one normal content result',
+    tool.renderMarkdown(inlineHistoryModel), '## Use Reset\nBody value');
+  tool.undoHistory(inlineHistory, inlineHistoryModel);
+  equal('M8: Remove Inline Code Undo restores delimiters',
+    tool.renderMarkdown(inlineHistoryModel), '## Use `Reset`\nBody `value`');
+  tool.redoHistory(inlineHistory, inlineHistoryModel);
+  equal('M9: Remove Inline Code Redo restores cleaned content',
+    tool.renderMarkdown(inlineHistoryModel), '## Use Reset\nBody value');
+
+  var toggleGroup = tool.createState('## Same\n## Same\n### Other');
+  tool.setSourceChoice(toggleGroup, 2, 'single', full(toggleGroup));
+  tool.setExactSourceChoice(toggleGroup, 0, full(toggleGroup));
+  deepEqual('N1: selected heading toggles off without affecting other selected headings',
+    tool.mappingAffectedHeadingIds(toggleGroup), [1]);
+  tool.setExactSourceChoice(toggleGroup, 2, full(toggleGroup));
+  deepEqual('N2: unselected heading toggles on within a mixed exact selection',
+    tool.mappingAffectedHeadingIds(toggleGroup), [1, 2]);
+  tool.setExactSourceChoice(toggleGroup, 1, full(toggleGroup));
+  deepEqual('N3: duplicate heading text remains ID-safe during deselection',
+    tool.mappingAffectedHeadingIds(toggleGroup), [2]);
+
+  var descendants = tool.createState('## Root\n#### Skipped child\n##### Nested\n## Stop\n# Higher stop\n### Outside');
+  tool.setDescendantsSourceChoice(descendants, 0, full(descendants));
+  deepEqual('O1: descendants exclude the current root and include nested skipped levels',
+    tool.mappingAffectedHeadingIds(descendants), [1, 2]);
+  tool.setExactSourceChoice(descendants, 0, full(descendants));
+  deepEqual('O2: root can be toggled on after descendants to recreate branch membership',
+    tool.mappingAffectedHeadingIds(descendants), [0, 1, 2]);
+  var descendantBoundary = tool.createState('### Root\n##### Child\n### Same level stop\n#### Not child\n## Higher stop\n###### Also outside');
+  tool.setDescendantsSourceChoice(descendantBoundary, 0, full(descendantBoundary));
+  deepEqual('O3: same-level and higher-level headings terminate descendant range',
+    tool.mappingAffectedHeadingIds(descendantBoundary), [1]);
+  var duplicateDescendants = tool.createState('### Same\n#### First\n### Same\n##### Second');
+  tool.setDescendantsSourceChoice(duplicateDescendants, 2, full(duplicateDescendants));
+  deepEqual('O4: same-name descendant roots remain ID-safe',
+    tool.mappingAffectedHeadingIds(duplicateDescendants), [3]);
+
+  equal('P1: proportional scroll maps Input midpoint to Result midpoint',
+    tool.proportionalScrollTop({ scrollTop: 400, scrollHeight: 1000, clientHeight: 200 },
+      { scrollHeight: 600, clientHeight: 200 }), 200);
+  equal('P2: proportional scroll handles a non-scrollable source safely',
+    tool.proportionalScrollTop({ scrollTop: 0, scrollHeight: 200, clientHeight: 200 },
+      { scrollHeight: 600, clientHeight: 200 }), 0);
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');
