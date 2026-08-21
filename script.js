@@ -508,6 +508,41 @@ function proportionalScrollTop(source, target) {
   return targetRange * Math.max(0, Math.min(1, source.scrollTop / sourceRange));
 }
 
+function headingNavigationTarget(model, headingId) {
+  var heading = model.headings[headingId];
+  if (!heading) return null;
+  var resultLineIndex = heading.lineIndex;
+  if (model.roundText !== null) {
+    var resultHeading = scanMarkdown(model.roundText)[headingId];
+    if (resultHeading) resultLineIndex = resultHeading.lineIndex;
+  }
+  return {
+    headingId: heading.id,
+    sourceLineIndex: heading.lineIndex,
+    resultLineIndex: resultLineIndex,
+    resultKind: headingConvertsToBody(model, heading) ? 'body' : 'heading'
+  };
+}
+
+function resultHeadingNavigationMap(model) {
+  var navigation = {};
+  model.headings.forEach(function (heading) {
+    var target = headingNavigationTarget(model, heading.id);
+    if (target) navigation[target.resultLineIndex] = target.headingId;
+  });
+  return navigation;
+}
+
+function centeredScrollTopForLine(text, lineIndex, scrollHeight, clientHeight) {
+  var lineCount = Math.max(1, String(text).split('\n').length);
+  var targetCenter = ((Math.max(0, lineIndex) + 0.5) / lineCount) * scrollHeight;
+  return Math.max(0, Math.min(Math.max(0, scrollHeight - clientHeight), targetCenter - clientHeight / 2));
+}
+
+function shouldReturnToTopAfterEdit(inputType, richPasteHandled) {
+  return Boolean(richPasteHandled || inputType === 'insertFromPaste');
+}
+
 function parseTableRow(line) {
   var trimmed = line.trim();
   var cells = [];
@@ -881,7 +916,7 @@ function renderMarkdownTable(table) {
   return '<table>' + head + body + '</table>';
 }
 
-function markdownToHtml(markdown, metadata) {
+function markdownToHtml(markdown, metadata, navigationByLine) {
   var lines = markdown.split('\n');
   var html = [];
   var fence = null;
@@ -922,16 +957,18 @@ function markdownToHtml(markdown, metadata) {
       continue;
     }
     var annotation = metadata && metadata[lineIndex];
+    var navigationAttribute = navigationByLine && Object.prototype.hasOwnProperty.call(navigationByLine, lineIndex)
+      ? ' data-heading-id="' + navigationByLine[lineIndex] + '"' : '';
     if (annotation) {
       closeList();
-      html.push('<p style="margin:0;font-size:' + annotation.fontSize + 'px;font-weight:' +
+      html.push('<p' + navigationAttribute + ' style="margin:0;font-size:' + annotation.fontSize + 'px;font-weight:' +
         (annotation.bold ? '700' : '400') + ';">' + inlineMarkdown(line) + '</p>');
       continue;
     }
     var heading = line.match(/^(#{1,6}) (.*)$/);
     if (heading) {
       closeList();
-      html.push('<h' + heading[1].length + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>');
+      html.push('<h' + heading[1].length + navigationAttribute + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>');
       continue;
     }
     var unordered = line.match(/^\s*[-+*]\s+(.*)$/);
@@ -952,9 +989,9 @@ function markdownToHtml(markdown, metadata) {
   return html.join('');
 }
 
-function renderRichHtml(model) {
+function renderRichHtml(model, includeNavigation) {
   var result = renderResult(model);
-  return markdownToHtml(result.text, result.metadata);
+  return markdownToHtml(result.text, result.metadata, includeNavigation ? resultHeadingNavigationMap(model) : null);
 }
 
 function createClipboardPayload(model) {
@@ -1074,6 +1111,10 @@ var HeadingTool = {
   removeThematicBreaks: removeThematicBreaks,
   removeInlineCode: removeInlineCode,
   proportionalScrollTop: proportionalScrollTop,
+  headingNavigationTarget: headingNavigationTarget,
+  resultHeadingNavigationMap: resultHeadingNavigationMap,
+  centeredScrollTopForLine: centeredScrollTopForLine,
+  shouldReturnToTopAfterEdit: shouldReturnToTopAfterEdit,
   isGuideLine: isGuideLine,
   compressGuideLines: compressGuideLines,
   mergeShortParagraphs: mergeShortParagraphs,
@@ -1133,6 +1174,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var lastImpact = null;
   var customPresets = loadCustomPresets();
   var scrollSyncLocked = false;
+  var plainPastePending = false;
 
   function safeStorageGet(key, fallback) {
     try {
@@ -1233,6 +1275,56 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
 
   function activePreview() {
     return previewMode === 'rich' ? richPreview : output;
+  }
+
+  function reducedMotionPreferred() {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+
+  function suspendScrollSync(action) {
+    scrollSyncLocked = true;
+    action();
+    window.requestAnimationFrame(function () {
+      window.requestAnimationFrame(function () { scrollSyncLocked = false; });
+    });
+  }
+
+  function centerRichNavigationTarget(headingId) {
+    var target = richPreview.querySelector('[data-heading-id="' + headingId + '"]');
+    if (!target) return;
+    var previewRect = richPreview.getBoundingClientRect();
+    var targetRect = target.getBoundingClientRect();
+    richPreview.scrollTop = Math.max(0, Math.min(
+      richPreview.scrollHeight - richPreview.clientHeight,
+      richPreview.scrollTop + targetRect.top - previewRect.top + targetRect.height / 2 - richPreview.clientHeight / 2
+    ));
+  }
+
+  function navigateToHeading(headingId) {
+    var target = headingNavigationTarget(state, headingId);
+    if (!target) return;
+    document.querySelector('.editor').scrollIntoView({
+      behavior: reducedMotionPreferred() ? 'auto' : 'smooth',
+      block: 'center'
+    });
+    suspendScrollSync(function () {
+      input.scrollTop = centeredScrollTopForLine(
+        state.baseline, target.sourceLineIndex, input.scrollHeight, input.clientHeight
+      );
+      if (previewMode === 'markdown') {
+        output.scrollTop = centeredScrollTopForLine(
+          renderResult(state).text, target.resultLineIndex, output.scrollHeight, output.clientHeight
+        );
+      } else {
+        centerRichNavigationTarget(target.headingId);
+      }
+    });
+  }
+
+  function returnPageToTopAfterPaste() {
+    window.requestAnimationFrame(function () {
+      window.scrollTo({ top: 0, behavior: reducedMotionPreferred() ? 'auto' : 'smooth' });
+    });
   }
 
   function syncScroll(source, target) {
@@ -1380,7 +1472,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   function render() {
     var result = renderResult(state);
     output.value = result.text;
-    richPreview.innerHTML = renderRichHtml(state);
+    richPreview.innerHTML = renderRichHtml(state, true);
     count.textContent = state.headings.length + (state.headings.length === 1 ? ' heading' : ' headings');
     renderMappingControls();
     if (!state.headings.length) {
@@ -1541,7 +1633,11 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       event.clipboardData.getData('text/html'),
       event.clipboardData.getData('text/plain')
     );
-    if (!imported.usedRich) return;
+    if (!imported.usedRich) {
+      plainPastePending = true;
+      window.setTimeout(function () { plainPastePending = false; }, 100);
+      return;
+    }
     event.preventDefault();
     var start = input.selectionStart;
     var end = input.selectionEnd;
@@ -1553,10 +1649,13 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     lastInputAt = 0;
     clearImpact();
     render();
+    if (shouldReturnToTopAfterEdit(null, true)) returnPageToTopAfterPaste();
     setStatus('Rich text structure recognized · ' + imported.headingCount + ' headings');
   });
   input.addEventListener('input', function (event) {
     var now = Date.now();
+    var returnToTop = shouldReturnToTopAfterEdit(event.inputType, plainPastePending);
+    plainPastePending = false;
     var isSeparateInput = event.inputType === 'insertFromPaste' || event.inputType === 'insertFromDrop' ||
       now - lastInputAt > 800;
     if (isSeparateInput) pushHistorySnapshot(appHistory, state);
@@ -1564,6 +1663,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     state = createState(input.value);
     clearImpact();
     render();
+    if (returnToTop) returnPageToTopAfterPaste();
     setStatus(state.headings.length ? 'Created a new Original and Baseline; previous body styles were cleared' : '');
   });
 
@@ -1640,6 +1740,12 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     render();
     setStatus('Changed “' + (state.headings[headingId].text || 'Untitled') + '” and its branch ' +
       (delta < 0 ? 'promoted ' : 'demoted ') + 'one level');
+  });
+
+  structure.addEventListener('dblclick', function (event) {
+    if (event.target.closest('button') || !event.target.closest('.outline-cell')) return;
+    var row = event.target.closest('.outline-row');
+    if (row) navigateToHeading(Number(row.dataset.headingId));
   });
 
   document.getElementById('continue-button').addEventListener('click', function () {

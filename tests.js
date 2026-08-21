@@ -845,6 +845,46 @@
     tool.renderRichHtml(tool.createState(simpleTableMarkdown)));
   equal('T5: existing semantic heading Rich Paste remains unchanged',
     tool.importClipboardContent('<h1>Title</h1>', 'Title').text, '# Title');
+
+  var navigationDuplicates = tool.createState('## Same\nBody\n## Same');
+  deepEqual('U1: duplicate heading navigation resolves the requested structural id',
+    tool.headingNavigationTarget(navigationDuplicates, 1),
+    { headingId: 1, sourceLineIndex: 2, resultLineIndex: 2, resultKind: 'heading' });
+  equal('U2: Before and After navigation resolve to the same structural target',
+    tool.headingNavigationTarget(navigationDuplicates, 1).headingId,
+    tool.resultHeadingNavigationMap(navigationDuplicates)[2]);
+
+  var navigationBody = tool.createState('### Notes\nBody');
+  tool.setExactSourceChoice(navigationBody, 0, full(navigationBody));
+  tool.setPresetChoice(navigationBody, preset16, full(navigationBody));
+  deepEqual('U3: heading-to-body navigation preserves source and Result mapping',
+    tool.headingNavigationTarget(navigationBody, 0),
+    { headingId: 0, sourceLineIndex: 0, resultLineIndex: 0, resultKind: 'body' });
+  ok('U4: Rich Preview marks a converted body block with its heading id',
+    tool.renderRichHtml(navigationBody, true).indexOf('<p data-heading-id="0"') === 0);
+  ok('U5: navigation markers do not enter Rich Copy output',
+    tool.createClipboardPayload(navigationBody).html.indexOf('data-heading-id') === -1);
+
+  var navigationSelection = tool.createState('## A\n## B');
+  tool.setExactSourceChoice(navigationSelection, 1, full(navigationSelection));
+  var navigationSelectionBefore = tool.snapshotState(navigationSelection);
+  tool.headingNavigationTarget(navigationSelection, 0);
+  deepEqual('U6: resolving a double-click navigation target does not change selection state',
+    tool.snapshotState(navigationSelection), navigationSelectionBefore);
+  deepEqual('U7: Rich Preview navigation map keeps duplicate headings ID-safe',
+    tool.resultHeadingNavigationMap(navigationDuplicates), { 0: 0, 2: 1 });
+  equal('U8: textarea navigation centers an interior source line',
+    tool.centeredScrollTopForLine('a\nb\nc\nd\ne', 2, 500, 100), 200);
+  equal('U9: textarea navigation clamps the first line to the scroll start',
+    tool.centeredScrollTopForLine('a\nb\nc', 0, 300, 200), 0);
+
+  ok('U10: plain paste completion requests page-top navigation',
+    tool.shouldReturnToTopAfterEdit('insertFromPaste', false));
+  ok('U11: Rich Paste completion requests page-top navigation',
+    tool.shouldReturnToTopAfterEdit(null, true));
+  ok('U12: ordinary edits do not request page-top navigation',
+    !tool.shouldReturnToTopAfterEdit('insertText', false) &&
+    !tool.shouldReturnToTopAfterEdit('deleteContentBackward', false));
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');
