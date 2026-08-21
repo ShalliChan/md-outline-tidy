@@ -40,11 +40,6 @@
         <div class="mapping-footer">
           <p id="mapping-status" class="sr-only" aria-live="polite"></p>
           <div class="sticky-actions" aria-label="Editing toolbar">
-            <div class="copy-split">
-              <button id="copy-rich-button" class="copy-main" type="button">Copy Rich Text</button>
-              <button id="copy-menu-button" class="copy-menu-toggle" type="button" aria-label="More copy options" aria-haspopup="menu" aria-expanded="false">▾</button>
-              <div id="copy-menu" class="copy-menu" role="menu" hidden><button id="copy-rich-option" type="button" role="menuitemradio">Copy Rich Text</button><button id="copy-markdown-button" type="button" role="menuitemradio">Copy Markdown</button></div>
-            </div>
             <span class="toolbar-spacer" aria-hidden="true"></span>
             <div class="sticky-action-group icon-group">
               <button id="undo-button" class="icon-button" type="button" title="Undo" aria-label="Undo" disabled><svg class="action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7 5 11l4 4"/><path d="M5 11h8a6 6 0 0 1 6 6"/></svg></button>
@@ -57,6 +52,11 @@
             </div>
             <span class="toolbar-divider" aria-hidden="true"></span>
             <button id="reset-button" class="reset-action" type="button">Reset</button>
+            <div class="copy-split">
+              <button id="copy-rich-button" class="copy-main" type="button">Copy Rich Text</button>
+              <button id="copy-menu-button" class="copy-menu-toggle" type="button" aria-label="More copy options" aria-haspopup="menu" aria-expanded="false">▾</button>
+              <div id="copy-menu" class="copy-menu" role="menu" hidden><button id="copy-rich-option" type="button" role="menuitemradio">Copy Rich Text</button><button id="copy-markdown-button" type="button" role="menuitemradio">Copy Markdown</button></div>
+            </div>
             <button id="continue-button" class="primary-action" type="button">Continue from Here</button>
           </div>
         </div>

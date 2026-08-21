@@ -23,6 +23,7 @@ function cloneMetadata(metadata) {
 
 function scanMarkdown(markdown) {
   var headings = [];
+  var tableLines = markdownTableLineMap(markdown);
   var inFence = false;
   var fenceCharacter = '';
   var openingFenceLength = 0;
@@ -41,7 +42,7 @@ function scanMarkdown(markdown) {
         inFence = true;
         fenceCharacter = opening[1][0];
         openingFenceLength = opening[1].length;
-      } else {
+      } else if (!tableLines[lineIndex]) {
         var match = line.match(/^(#{1,6})(?= )(.*)$/);
         if (match) {
           headings.push({
@@ -446,11 +447,12 @@ function fenceStep(line, fence) {
 function removeThematicBreaks(markdown) {
   var fence = null;
   var output = [];
-  markdown.split('\n').forEach(function (line) {
+  var tableLines = markdownTableLineMap(markdown);
+  markdown.split('\n').forEach(function (line, lineIndex) {
     var wasInFence = Boolean(fence);
     var nextFence = fenceStep(line, fence);
     var isFenceLine = nextFence !== fence;
-    if (!wasInFence && !isFenceLine && isThematicBreak(line)) return;
+    if (!wasInFence && !isFenceLine && !tableLines[lineIndex] && isThematicBreak(line)) return;
     if (!(line === '' && output.length && output[output.length - 1] === '')) output.push(line);
     fence = nextFence;
   });
@@ -506,9 +508,93 @@ function proportionalScrollTop(source, target) {
   return targetRange * Math.max(0, Math.min(1, source.scrollTop / sourceRange));
 }
 
+function parseTableRow(line) {
+  var trimmed = line.trim();
+  var cells = [];
+  var cell = '';
+  var sawSeparator = false;
+  var codeFenceLength = 0;
+  for (var index = 0; index < trimmed.length; index += 1) {
+    var character = trimmed[index];
+    if (character === '\\' && trimmed[index + 1] === '|') {
+      cell += '|';
+      index += 1;
+      continue;
+    }
+    if (character === '`') {
+      var runEnd = index + 1;
+      while (runEnd < trimmed.length && trimmed[runEnd] === '`') runEnd += 1;
+      var runLength = runEnd - index;
+      if (!codeFenceLength) codeFenceLength = runLength;
+      else if (runLength === codeFenceLength) codeFenceLength = 0;
+      cell += trimmed.slice(index, runEnd);
+      index = runEnd - 1;
+      continue;
+    }
+    if (character === '|' && !codeFenceLength) {
+      cells.push(cell.trim());
+      cell = '';
+      sawSeparator = true;
+      continue;
+    }
+    cell += character;
+  }
+  cells.push(cell.trim());
+  if (trimmed[0] === '|') cells.shift();
+  if (trimmed[trimmed.length - 1] === '|') cells.pop();
+  return sawSeparator && cells.length ? cells : null;
+}
+
+function tableDelimiterAlignment(cell) {
+  var value = cell.trim();
+  if (!/^:?-{3,}:?$/.test(value)) return null;
+  if (value[0] === ':' && value[value.length - 1] === ':') return 'center';
+  if (value[value.length - 1] === ':') return 'right';
+  return 'left';
+}
+
+function readMarkdownTable(lines, startIndex) {
+  if (startIndex + 1 >= lines.length) return null;
+  var header = parseTableRow(lines[startIndex]);
+  var delimiter = parseTableRow(lines[startIndex + 1]);
+  if (!header || !delimiter || header.length !== delimiter.length) return null;
+  var alignments = delimiter.map(tableDelimiterAlignment);
+  if (alignments.some(function (alignment) { return alignment === null; })) return null;
+  var rows = [];
+  var index = startIndex + 2;
+  while (index < lines.length) {
+    var row = parseTableRow(lines[index]);
+    if (!row) break;
+    while (row.length < header.length) row.push('');
+    rows.push(row.slice(0, header.length));
+    index += 1;
+  }
+  return { header: header, alignments: alignments, rows: rows, endIndex: index - 1 };
+}
+
+function markdownTableLineMap(markdown) {
+  var lines = markdown.split('\n');
+  var marked = {};
+  var fence = null;
+  for (var index = 0; index < lines.length; index += 1) {
+    if (fence) {
+      fence = fenceStep(lines[index], fence);
+      continue;
+    }
+    var opened = fenceStep(lines[index], null);
+    if (opened) { fence = opened; continue; }
+    var table = readMarkdownTable(lines, index);
+    if (!table) continue;
+    for (var rowIndex = index; rowIndex <= table.endIndex; rowIndex += 1) marked[rowIndex] = true;
+    index = table.endIndex;
+  }
+  return marked;
+}
+
 function isSpecialBlock(line, inFence) {
   if (inFence || !line.trim()) return true;
-  return /^(#{1,6}) |^ {0,3}(`{3,}|~{3,})|^\s*(?:[-+*]|\d+[.)])\s+|^\s*>|^\s*\|.*\||^ {4}|^\t/.test(line) ||
+  return /^(#{1,6}) |^ {0,3}(`{3,}|~{3,})|^\s*(?:[-+*]|\d+[.)])\s+|^\s*>|^ {4}|^\t/.test(line) ||
+    Boolean(parseTableRow(line)) ||
     isThematicBreak(line);
 }
 
@@ -524,12 +610,13 @@ function compressGuideLines(markdown) {
   var lines = markdown.split('\n');
   var result = [];
   var fence = null;
+  var tableLines = markdownTableLineMap(markdown);
   for (var index = 0; index < lines.length; index += 1) {
     var line = lines[index];
     var wasInFence = Boolean(fence);
     var nextFence = fenceStep(line, fence);
     var isFenceLine = nextFence !== fence;
-    if (!wasInFence && !isFenceLine && isGuideLine(line)) {
+    if (!wasInFence && !isFenceLine && !tableLines[index] && isGuideLine(line)) {
       var combined = line.trimEnd();
       var cursor = index + 1;
       var merged = false;
@@ -591,6 +678,13 @@ function escapeHtml(value) {
   });
 }
 
+function safeLinkHref(href) {
+  var value = String(href || '').trim();
+  var scheme = value.match(/^([A-Za-z][A-Za-z0-9+.-]*):/);
+  if (!scheme || ['https', 'http', 'mailto', 'tel'].indexOf(scheme[1].toLowerCase()) === -1) return null;
+  return /[\u0000-\u001f\u007f]/.test(value) ? null : value;
+}
+
 function inlineHtmlToMarkdown(node, options) {
   options = options || {};
   if (node.nodeType === 3) return node.nodeValue.replace(/\s+/g, ' ');
@@ -608,7 +702,7 @@ function inlineHtmlToMarkdown(node, options) {
     return inlineFence + content + inlineFence;
   }
   if (tag === 'a') {
-    var href = node.getAttribute('href');
+    var href = safeLinkHref(node.getAttribute('href'));
     return href ? '[' + content + '](' + href + ')' : content;
   }
   return content;
@@ -654,6 +748,37 @@ function codeBlockHtmlToMarkdown(node) {
   return fence + reliableCodeLanguage(node) + '\n' + content + '\n' + fence;
 }
 
+function tableCellHtmlToMarkdown(cell) {
+  return inlineHtmlToMarkdown(cell, {}).replace(/\s+/g, ' ').trim().replace(/\\?\|/g, '\\|');
+}
+
+function tableRowMarkdown(cells) {
+  return '| ' + cells.join(' | ') + ' |';
+}
+
+function htmlTableToMarkdown(table) {
+  var rows = Array.prototype.filter.call(table.querySelectorAll('tr'), function (row) {
+    return row.closest('table') === table;
+  });
+  var complex = table.querySelectorAll('table').length > 0 || rows.some(function (row) {
+    return Array.prototype.some.call(row.children, function (cell) {
+      return /^(th|td)$/i.test(cell.tagName) &&
+        (Number(cell.getAttribute('colspan') || 1) > 1 || Number(cell.getAttribute('rowspan') || 1) > 1);
+    });
+  });
+  var values = rows.map(function (row) {
+    return Array.prototype.filter.call(row.children, function (cell) {
+      return /^(th|td)$/i.test(cell.tagName);
+    }).map(tableCellHtmlToMarkdown);
+  }).filter(function (row) { return row.length > 0; });
+  if (!values.length) return '';
+  if (complex) return values.map(function (row) { return row.join(' — '); }).join('\n');
+  var width = values.reduce(function (maximum, row) { return Math.max(maximum, row.length); }, 0);
+  values.forEach(function (row) { while (row.length < width) row.push(''); });
+  return [tableRowMarkdown(values[0]), tableRowMarkdown(values[0].map(function () { return '---'; }))]
+    .concat(values.slice(1).map(tableRowMarkdown)).join('\n');
+}
+
 function blockChildrenToMarkdown(node) {
   return Array.prototype.map.call(node.childNodes, blockHtmlToMarkdown)
     .filter(function (value) { return value.trim(); })
@@ -669,6 +794,7 @@ function blockHtmlToMarkdown(node) {
     return '#'.repeat(Number(heading[1])) + ' ' + inlineHtmlToMarkdown(node, { inHeading: true }).trim();
   }
   if (tag === 'p') return inlineHtmlToMarkdown(node, {}).trim();
+  if (tag === 'table') return htmlTableToMarkdown(node);
   if (tag === 'ul' || tag === 'ol') return listHtmlToMarkdown(node, 0);
   if (tag === 'pre') return codeBlockHtmlToMarkdown(node);
   if (tag === 'blockquote') {
@@ -677,7 +803,7 @@ function blockHtmlToMarkdown(node) {
   }
   if (tag === 'hr') return '---';
   var hasBlockChild = Array.prototype.some.call(node.children, function (child) {
-    return /^(h[1-6]|p|div|section|article|ul|ol|pre|blockquote|hr)$/i.test(child.tagName);
+    return /^(h[1-6]|p|div|section|article|ul|ol|pre|blockquote|hr|table)$/i.test(child.tagName);
   });
   return hasBlockChild ? blockChildrenToMarkdown(node) : inlineHtmlToMarkdown(node, {}).trim();
 }
@@ -701,7 +827,11 @@ function importClipboardContent(html, plain, importer) {
   try {
     var parsed = new DOMParser().parseFromString(html, 'text/html');
     var headingCount = parsed.querySelectorAll('h1, h2, h3, h4, h5, h6').length;
-    if (!headingCount) return { text: plain, usedRich: false, headingCount: 0 };
+    var hasTable = parsed.querySelectorAll('table').length > 0;
+    var hasSafeLink = Array.prototype.some.call(parsed.querySelectorAll('a[href]'), function (anchor) {
+      return Boolean(safeLinkHref(anchor.getAttribute('href')));
+    });
+    if (!headingCount && !hasTable && !hasSafeLink) return { text: plain, usedRich: false, headingCount: 0 };
     var markdown = (importer || richHtmlToMarkdown)(html);
     if (!markdown && plain) return { text: plain, usedRich: false, headingCount: 0 };
     return { text: markdown, usedRich: true, headingCount: headingCount };
@@ -710,10 +840,45 @@ function importClipboardContent(html, plain, importer) {
   }
 }
 function inlineMarkdown(value) {
-  var escaped = escapeHtml(value);
-  escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
-  escaped = escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  return escaped;
+  var tokens = [];
+  function token(html) {
+    tokens.push(html);
+    return '\u0000' + (tokens.length - 1) + '\u0000';
+  }
+  function formatText(text) {
+    var formatted = escapeHtml(text);
+    formatted = formatted.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+    formatted = formatted.replace(/(^|[^\w])\*([^*\n]+)\*(?=$|[^\w])/g, '$1<em>$2</em>');
+    return formatted.replace(/(^|[^\w])_([^_\n]+)_(?=$|[^\w])/g, '$1<em>$2</em>');
+  }
+  var source = String(value);
+  source = source.replace(/(`+)([^\n]*?)\1/g, function (match, fence, content) {
+    return token('<code>' + escapeHtml(content) + '</code>');
+  });
+  source = source.replace(/\[([^\]]+)\]\(((?:[^()\s]|\([^)]*\))+?)\)/g, function (match, label, href) {
+    var safeHref = safeLinkHref(href);
+    var renderedLabel = formatText(label);
+    return token(safeHref ? '<a href="' + escapeHtml(safeHref) + '">' + renderedLabel + '</a>' : renderedLabel);
+  });
+  var rendered = formatText(source);
+  while (/\u0000\d+\u0000/.test(rendered)) {
+    rendered = rendered.replace(/\u0000(\d+)\u0000/g, function (match, index) { return tokens[Number(index)]; });
+  }
+  return rendered;
+}
+
+function renderMarkdownTable(table) {
+  function cellHtml(tag, value, columnIndex) {
+    return '<' + tag + ' style="text-align:' + table.alignments[columnIndex] + ';">' +
+      inlineMarkdown(value) + '</' + tag + '>';
+  }
+  var head = '<thead><tr>' + table.header.map(function (cell, index) {
+    return cellHtml('th', cell, index);
+  }).join('') + '</tr></thead>';
+  var body = '<tbody>' + table.rows.map(function (row) {
+    return '<tr>' + row.map(function (cell, index) { return cellHtml('td', cell, index); }).join('') + '</tr>';
+  }).join('') + '</tbody>';
+  return '<table>' + head + body + '</table>';
 }
 
 function markdownToHtml(markdown, metadata) {
@@ -726,7 +891,8 @@ function markdownToHtml(markdown, metadata) {
     if (listType) html.push('</' + listType + '>');
     listType = null;
   }
-  lines.forEach(function (line, lineIndex) {
+  for (var lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    var line = lines[lineIndex];
     if (fence) {
       var closingFence = fenceStep(line, fence);
       if (closingFence === null) {
@@ -736,30 +902,37 @@ function markdownToHtml(markdown, metadata) {
       } else {
         codeLines.push(line);
       }
-      return;
+      continue;
     }
     var opened = fenceStep(line, null);
     if (opened) {
       closeList();
       fence = opened;
-      return;
+      continue;
+    }
+    var table = readMarkdownTable(lines, lineIndex);
+    if (table) {
+      closeList();
+      html.push(renderMarkdownTable(table));
+      lineIndex = table.endIndex;
+      continue;
     }
     if (!line.trim()) {
       closeList();
-      return;
+      continue;
     }
     var annotation = metadata && metadata[lineIndex];
     if (annotation) {
       closeList();
       html.push('<p style="margin:0;font-size:' + annotation.fontSize + 'px;font-weight:' +
         (annotation.bold ? '700' : '400') + ';">' + inlineMarkdown(line) + '</p>');
-      return;
+      continue;
     }
     var heading = line.match(/^(#{1,6}) (.*)$/);
     if (heading) {
       closeList();
       html.push('<h' + heading[1].length + '>' + inlineMarkdown(heading[2]) + '</h' + heading[1].length + '>');
-      return;
+      continue;
     }
     var unordered = line.match(/^\s*[-+*]\s+(.*)$/);
     var ordered = line.match(/^\s*\d+[.)]\s+(.*)$/);
@@ -767,13 +940,13 @@ function markdownToHtml(markdown, metadata) {
       var desired = unordered ? 'ul' : 'ol';
       if (listType !== desired) { closeList(); listType = desired; html.push('<' + desired + '>'); }
       html.push('<li>' + inlineMarkdown((unordered || ordered)[1]) + '</li>');
-      return;
+      continue;
     }
     closeList();
     if (/^\s*>/.test(line)) html.push('<blockquote>' + inlineMarkdown(line.replace(/^\s*>\s?/, '')) + '</blockquote>');
     else if (isThematicBreak(line)) html.push('<hr>');
     else html.push('<p>' + inlineMarkdown(line) + '</p>');
-  });
+  }
   closeList();
   if (fence) html.push('<pre><code>' + escapeHtml(codeLines.join('\n')) + '</code></pre>');
   return html.join('');

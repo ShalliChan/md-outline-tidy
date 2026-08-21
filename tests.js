@@ -739,6 +739,112 @@
   equal('P2: proportional scroll handles a non-scrollable source safely',
     tool.proportionalScrollTop({ scrollTop: 0, scrollHeight: 200, clientHeight: 200 },
       { scrollHeight: 600, clientHeight: 200 }), 0);
+
+  var simpleTableMarkdown = '| Feature | Status |\n| --- | --- |\n| Rich Copy | Supported |\n| Table | Supported |';
+  var simpleTableHtml = tool.markdownToHtml(simpleTableMarkdown, {});
+  ok('Q1: simple Markdown table renders semantic table sections and cells',
+    simpleTableHtml.indexOf('<table><thead><tr>') === 0 &&
+    simpleTableHtml.indexOf('</thead><tbody>') !== -1 &&
+    simpleTableHtml.indexOf('<th ') !== -1 && simpleTableHtml.indexOf('<td ') !== -1);
+  equal('Q2: multiple table body rows remain distinct',
+    (simpleTableHtml.match(/<tr>/g) || []).length, 3);
+  var alignedTableHtml = tool.markdownToHtml('| Left | Center | Right |\n| :--- | :---: | ---: |\n| A | B | C |', {});
+  ok('Q3: table alignment syntax reaches semantic cell styles',
+    alignedTableHtml.indexOf('text-align:left') !== -1 && alignedTableHtml.indexOf('text-align:center') !== -1 &&
+    alignedTableHtml.indexOf('text-align:right') !== -1);
+  var escapedPipeHtml = tool.markdownToHtml('| Value | Other |\n| --- | --- |\n| A \\| B | C |', {});
+  ok('Q4: escaped pipe remains in one table cell',
+    escapedPipeHtml.indexOf('>A | B</td>') !== -1 && (escapedPipeHtml.match(/<td /g) || []).length === 2);
+  var codePipeHtml = tool.markdownToHtml('| Code | Other |\n| --- | --- |\n| `a | b` | C |', {});
+  ok('Q5: pipe inside inline code remains in one cell',
+    codePipeHtml.indexOf('<code>a | b</code>') !== -1 && (codePipeHtml.match(/<td /g) || []).length === 2);
+  var noOuterPipesHtml = tool.markdownToHtml('Feature | Status\n--- | ---\nRich Copy | Supported', {});
+  ok('Q6: leading and trailing pipes are optional for simple tables', noOuterPipesHtml.indexOf('<table>') === 0);
+  var paragraphTableHtml = tool.markdownToHtml('Before.\n\n' + simpleTableMarkdown + '\n\nAfter.', {});
+  ok('Q7: table between paragraphs remains an independent block',
+    paragraphTableHtml.indexOf('<p>Before.</p><table>') === 0 && paragraphTableHtml.indexOf('</table><p>After.</p>') !== -1);
+  var headingTableHtml = tool.markdownToHtml('## Before\n\n' + simpleTableMarkdown + '\n\n### After', {});
+  ok('Q8: table boundaries remain intact between headings',
+    headingTableHtml.indexOf('<h2>Before</h2><table>') === 0 && headingTableHtml.indexOf('</table><h3>After</h3>') !== -1);
+  var fencedTableMarkdown = '```md\n| A | B |\n| --- | --- |\n```';
+  var fencedTableHtml = tool.markdownToHtml(fencedTableMarkdown, {});
+  ok('Q9: fenced table-like text remains code',
+    fencedTableHtml.indexOf('<pre><code>| A | B |') === 0 && fencedTableHtml.indexOf('<table>') === -1);
+  equal('Q10: Copy Markdown preserves an original Markdown table',
+    tool.createMarkdownClipboardPayload(tool.createState(simpleTableMarkdown)).plain, simpleTableMarkdown);
+  deepEqual('Q11: table cell text is not scanned as a heading',
+    tool.scanMarkdown('# Name | Value\n--- | ---\nCell | Other'), []);
+
+  var formattedCellHtml = tool.markdownToHtml('| Bold | Italic | Code |\n| --- | --- | --- |\n| **Yes** | *Maybe* | `x()` |', {});
+  ok('R1: table cells reuse bold, italic, and inline-code semantics',
+    formattedCellHtml.indexOf('<strong>Yes</strong>') !== -1 && formattedCellHtml.indexOf('<em>Maybe</em>') !== -1 &&
+    formattedCellHtml.indexOf('<code>x()</code>') !== -1);
+  equal('R1b: ordinary intraword underscores remain literal text',
+    tool.markdownToHtml('snake_case_name', {}), '<p>snake_case_name</p>');
+  equal('R1c: Markdown link syntax inside inline code remains code',
+    tool.markdownToHtml('`[Docs](https://example.com)`', {}), '<p><code>[Docs](https://example.com)</code></p>');
+  equal('R1d: inline code inside a safe link label remains formatted',
+    tool.markdownToHtml('[Use `Copy`](https://example.com)', {}),
+    '<p><a href="https://example.com">Use <code>Copy</code></a></p>');
+  var completeUrl = 'https://example.com/path?a=1&b=2#section';
+  equal('R2: body hyperlink preserves protocol, path, query, and fragment',
+    tool.markdownToHtml('[Documentation](' + completeUrl + ')', {}),
+    '<p><a href="https://example.com/path?a=1&amp;b=2#section">Documentation</a></p>');
+  equal('R3: heading hyperlink remains clickable in Rich HTML',
+    tool.markdownToHtml('## [Documentation](' + completeUrl + ')', {}),
+    '<h2><a href="https://example.com/path?a=1&amp;b=2#section">Documentation</a></h2>');
+  ok('R4: table-cell hyperlink remains clickable with its complete URL',
+    tool.markdownToHtml('| Docs |\n| --- |\n| [Documentation](' + completeUrl + ') |', {})
+      .indexOf('<a href="https://example.com/path?a=1&amp;b=2#section">Documentation</a>') !== -1);
+  ok('R5: http, mailto, and tel links remain allowed',
+    tool.markdownToHtml('[Web](http://example.com) [Mail](mailto:a@example.com) [Call](tel:+123)', {})
+      .match(/<a href=/g).length === 3);
+  var unsafeLinkHtml = tool.markdownToHtml('[Run](javascript:alert(1))', {});
+  ok('R6: unsafe Markdown href preserves visible text without an executable link',
+    unsafeLinkHtml === '<p>Run</p>' && unsafeLinkHtml.indexOf('<a ') === -1);
+  equal('R7: data scheme is also rendered as visible text only',
+    tool.markdownToHtml('[Payload](data:text/html,boom)', {}), '<p>Payload</p>');
+
+  var importedTableHtml = '<table><tr><th>Name</th><th>Link</th></tr>' +
+    '<tr><td>OpenAI</td><td><a href="https://example.com/path?a=1&amp;b=2#top">Website</a></td></tr>' +
+    '<tr><td>Docs</td><td><strong>Bold</strong> and <em>Italic</em> and <code>x()</code></td></tr></table>';
+  var importedTableMarkdown = '| Name | Link |\n| --- | --- |\n' +
+    '| OpenAI | [Website](https://example.com/path?a=1&b=2#top) |\n' +
+    '| Docs | **Bold** and *Italic* and `x()` |';
+  equal('S1: Rich Paste HTML table normalizes th, td, rows, and columns to Markdown',
+    tool.richHtmlToMarkdown(importedTableHtml), importedTableMarkdown);
+  var importedTableDecision = tool.importClipboardContent(importedTableHtml, 'plain fallback');
+  ok('S2: semantic HTML table selects Rich Import without requiring a heading',
+    importedTableDecision.usedRich && importedTableDecision.headingCount === 0 &&
+    importedTableDecision.text === importedTableMarkdown);
+  ok('S3: HTML table import preserves link, bold, italic, and inline code',
+    importedTableDecision.text.indexOf('[Website](https://example.com/path?a=1&b=2#top)') !== -1 &&
+    importedTableDecision.text.indexOf('**Bold** and *Italic* and `x()`') !== -1);
+  var bodyLinkDecision = tool.importClipboardContent(
+    '<p>Read <a href="https://example.com/path?a=1&amp;b=2#section">Documentation</a></p>', 'Read Documentation');
+  equal('S4: safe body link selects Rich Import and decodes HTML ampersand correctly',
+    bodyLinkDecision.text, 'Read [Documentation](https://example.com/path?a=1&b=2#section)');
+  equal('S5: unsafe HTML href imports as visible text only',
+    tool.richHtmlToMarkdown('<table><tr><th>Action</th></tr><tr><td><a href="javascript:alert(1)">Run</a></td></tr></table>'),
+    '| Action |\n| --- |\n| Run |');
+  equal('S6: complex colspan table uses predictable non-table fallback',
+    tool.richHtmlToMarkdown('<table><tr><th colspan="2">Group</th></tr><tr><td>A</td><td>B</td></tr></table>'),
+    'Group\nA — B');
+  equal('S7: Rich Paste preserves a complete safe link inside a heading',
+    tool.richHtmlToMarkdown('<h2><a href="https://example.com/path?a=1&amp;b=2#section">Docs</a></h2>'),
+    '## [Docs](https://example.com/path?a=1&b=2#section)');
+
+  equal('T1: Remove Dividers preserves table delimiter rows',
+    tool.removeThematicBreaks(simpleTableMarkdown), simpleTableMarkdown);
+  equal('T2: Compress Guide Lines leaves table rows unchanged',
+    tool.compressGuideLines(simpleTableMarkdown), simpleTableMarkdown);
+  ok('T3: table rendering does not reintroduce empty Rich paragraphs',
+    paragraphTableHtml.indexOf('<p><br></p>') === -1 && paragraphTableHtml.indexOf('<p></p>') === -1);
+  equal('T4: Rich Copy continues to use the same table renderer as Rich Preview',
+    tool.createClipboardPayload(tool.createState(simpleTableMarkdown)).html,
+    tool.renderRichHtml(tool.createState(simpleTableMarkdown)));
+  equal('T5: existing semantic heading Rich Paste remains unchanged',
+    tool.importClipboardContent('<h1>Title</h1>', 'Title').text, '# Title');
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');
