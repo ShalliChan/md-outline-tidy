@@ -885,6 +885,199 @@
   ok('U12: ordinary edits do not request page-top navigation',
     !tool.shouldReturnToTopAfterEdit('insertText', false) &&
     !tool.shouldReturnToTopAfterEdit('deleteContentBackward', false));
+
+  var continuousToolbar = tool.createState('### A\n## Existing\n### B');
+  tool.setSourceChoice(continuousToolbar, 3, 'single', full(continuousToolbar));
+  tool.shiftSelectedSource(continuousToolbar, -1);
+  tool.shiftSelectedSource(continuousToolbar, -1);
+  equal('V7-1: toolbar Promote can run repeatedly on one Source group',
+    tool.renderMarkdown(continuousToolbar), '# A\n## Existing\n# B');
+  deepEqual('V7-2: repeated toolbar Promote keeps the original logical heading ids',
+    tool.mappingAffectedHeadingIds(continuousToolbar), [0, 2]);
+  tool.shiftSelectedSource(continuousToolbar, 1);
+  equal('V7-3: Promote then Promote then Demote stays on the same headings',
+    tool.renderMarkdown(continuousToolbar), '## A\n## Existing\n## B');
+
+  var continuousDemote = tool.createState('### A\n#### Existing\n### B');
+  tool.setSourceChoice(continuousDemote, 3, 'single', full(continuousDemote));
+  tool.shiftSelectedSource(continuousDemote, 1);
+  tool.shiftSelectedSource(continuousDemote, 1);
+  equal('V7-4: toolbar Demote can run repeatedly without absorbing current-level headings',
+    tool.renderMarkdown(continuousDemote), '##### A\n#### Existing\n##### B');
+  deepEqual('V7-5: repeated toolbar Demote retains stable selected ids',
+    tool.mappingAffectedHeadingIds(continuousDemote), [0, 2]);
+
+  var continuousPlus = tool.createState('### Root\n#### Child\n## Stop\n### Outside');
+  tool.setSourceChoice(continuousPlus, 3, 'and-below',
+    { start: 0, end: continuousPlus.baseline.indexOf('## Stop') });
+  tool.shiftSelectedSource(continuousPlus, -1);
+  tool.shiftSelectedSource(continuousPlus, -1);
+  equal('V7-6: Hn+ continuous Promote keeps its real root and descendants',
+    tool.renderMarkdown(continuousPlus), '# Root\n## Child\n## Stop\n### Outside');
+  deepEqual('V7-7: Hn+ continuous selection does not drift beyond its original range',
+    tool.mappingAffectedHeadingIds(continuousPlus), [0, 1]);
+
+  var continuousExact = tool.createState('#### A\n## Keep\n#### B');
+  tool.setExactSourceChoice(continuousExact, 0, full(continuousExact));
+  tool.setExactSourceChoice(continuousExact, 2, full(continuousExact));
+  tool.shiftSelectedSource(continuousExact, -1);
+  tool.shiftSelectedSource(continuousExact, -1);
+  tool.shiftSelectedSource(continuousExact, -1);
+  equal('V7-8: exact multi-selection supports three consecutive Promote steps',
+    tool.renderMarkdown(continuousExact), '# A\n## Keep\n# B');
+  deepEqual('V7-9: exact multi-selection identity remains stable after repeated shifts',
+    tool.mappingAffectedHeadingIds(continuousExact), [0, 2]);
+
+  var continuousMixedBoundary = tool.createState('### A\n#### B');
+  tool.setExactSourceChoice(continuousMixedBoundary, 0, full(continuousMixedBoundary));
+  tool.setExactSourceChoice(continuousMixedBoundary, 1, full(continuousMixedBoundary));
+  tool.shiftSelectedSource(continuousMixedBoundary, 1);
+  tool.shiftSelectedSource(continuousMixedBoundary, 1);
+  equal('V7-10: repeated Demote preserves mixed exact-selection relative levels',
+    tool.renderMarkdown(continuousMixedBoundary), '##### A\n###### B');
+  ok('V7-11: mixed selection safely no-ops when another Demote would cross H6',
+    !tool.shiftSelectedSource(continuousMixedBoundary, 1) &&
+    tool.renderMarkdown(continuousMixedBoundary) === '##### A\n###### B');
+
+  var continuousMapped = tool.createState('### A');
+  tool.setSourceChoice(continuousMapped, 3, 'single', full(continuousMapped));
+  tool.setMappingChoice(continuousMapped, 'target', 2, full(continuousMapped));
+  ok('V7-12: toolbar shift can adopt an equivalent current conversion for continuation',
+    tool.shiftSelectedSource(continuousMapped, -1) && continuousMapped.mappingTarget === null &&
+    tool.renderMarkdown(continuousMapped) === '## A');
+  tool.shiftSelectedSource(continuousMapped, -1);
+  equal('V7-13: adopted conversion continues to the next heading level',
+    tool.renderMarkdown(continuousMapped), '# A');
+
+  var continuousRowPromote = tool.createState('#### Parent\n##### Child\n#### Stop');
+  tool.changeSubtree(continuousRowPromote, 0, -1);
+  tool.changeSubtree(continuousRowPromote, 0, -1);
+  tool.changeSubtree(continuousRowPromote, 0, -1);
+  equal('V7-14: Tree row branch supports three consecutive Promote steps',
+    tool.renderMarkdown(continuousRowPromote), '# Parent\n## Child\n#### Stop');
+
+  var continuousRowDemote = tool.createState('## Parent\n### Child\n## Stop');
+  tool.changeSubtree(continuousRowDemote, 0, 1);
+  tool.changeSubtree(continuousRowDemote, 0, 1);
+  tool.changeSubtree(continuousRowDemote, 0, 1);
+  equal('V7-15: Tree row branch supports consecutive Demote and stops at the next peer',
+    tool.renderMarkdown(continuousRowDemote), '##### Parent\n###### Child\n## Stop');
+
+  var continuousDuplicateBranch = tool.createState('### Same\n#### First\n### Same\n#### Second');
+  tool.changeSubtree(continuousDuplicateBranch, 2, -1);
+  tool.changeSubtree(continuousDuplicateBranch, 2, -1);
+  equal('V7-16: repeated Tree row shifts remain duplicate-title ID-safe',
+    tool.renderMarkdown(continuousDuplicateBranch), '### Same\n#### First\n# Same\n## Second');
+
+  var rowBoundaryNoOp = tool.createState('# Root\n# Stop');
+  var rowBoundaryBefore = tool.snapshotState(rowBoundaryNoOp);
+  ok('V7-17: Tree row Promote at a complete H1 boundary is a stable no-op',
+    !tool.changeSubtree(rowBoundaryNoOp, 0, -1));
+  deepEqual('V7-18: Tree row boundary no-op does not mutate offsets or state',
+    tool.snapshotState(rowBoundaryNoOp), rowBoundaryBefore);
+
+  function continuousHistoryStep(history, model, change) {
+    var before = tool.snapshotState(model);
+    var changed = change();
+    if (changed) tool.pushHistorySnapshot(history, before);
+    return changed;
+  }
+  var continuousHistoryModel = tool.createState('#### A');
+  var continuousHistory = tool.createHistory(50);
+  tool.setSourceChoice(continuousHistoryModel, 4, 'single', full(continuousHistoryModel));
+  continuousHistoryStep(continuousHistory, continuousHistoryModel, function () {
+    return tool.shiftSelectedSource(continuousHistoryModel, -1);
+  });
+  continuousHistoryStep(continuousHistory, continuousHistoryModel, function () {
+    return tool.shiftSelectedSource(continuousHistoryModel, -1);
+  });
+  continuousHistoryStep(continuousHistory, continuousHistoryModel, function () {
+    return tool.shiftSelectedSource(continuousHistoryModel, -1);
+  });
+  ok('V7-19: every effective continuous Promote creates an independent history step',
+    continuousHistory.undo.length === 3 && tool.renderMarkdown(continuousHistoryModel) === '# A');
+  tool.undoHistory(continuousHistory, continuousHistoryModel);
+  var undoOne = tool.renderMarkdown(continuousHistoryModel);
+  tool.undoHistory(continuousHistory, continuousHistoryModel);
+  var undoTwo = tool.renderMarkdown(continuousHistoryModel);
+  tool.undoHistory(continuousHistory, continuousHistoryModel);
+  var undoThree = tool.renderMarkdown(continuousHistoryModel);
+  equal('V7-20: Undo restores each Promote level separately',
+    [undoOne, undoTwo, undoThree].join('|'), '## A|### A|#### A');
+  tool.redoHistory(continuousHistory, continuousHistoryModel);
+  tool.redoHistory(continuousHistory, continuousHistoryModel);
+  tool.redoHistory(continuousHistory, continuousHistoryModel);
+  equal('V7-21: Redo reapplies continuous Promote one level at a time',
+    tool.renderMarkdown(continuousHistoryModel), '# A');
+  var boundaryHistorySize = continuousHistory.undo.length;
+  ok('V7-22: boundary no-op does not add a meaningless history snapshot',
+    !continuousHistoryStep(continuousHistory, continuousHistoryModel, function () {
+      return tool.shiftSelectedSource(continuousHistoryModel, -1);
+    }) && continuousHistory.undo.length === boundaryHistorySize);
+
+  var continuousDemoteHistoryModel = tool.createState('### A');
+  var continuousDemoteHistory = tool.createHistory(50);
+  tool.setSourceChoice(continuousDemoteHistoryModel, 3, 'single', full(continuousDemoteHistoryModel));
+  for (var demoteStep = 0; demoteStep < 3; demoteStep += 1) {
+    continuousHistoryStep(continuousDemoteHistory, continuousDemoteHistoryModel, function () {
+      return tool.shiftSelectedSource(continuousDemoteHistoryModel, 1);
+    });
+  }
+  ok('V7-23: every effective continuous Demote creates an independent history step',
+    continuousDemoteHistory.undo.length === 3 && tool.renderMarkdown(continuousDemoteHistoryModel) === '###### A');
+  tool.undoHistory(continuousDemoteHistory, continuousDemoteHistoryModel);
+  var demoteUndo = tool.renderMarkdown(continuousDemoteHistoryModel);
+  tool.redoHistory(continuousDemoteHistory, continuousDemoteHistoryModel);
+  equal('V7-24: Undo and Redo restore continuous Demote one level at a time',
+    demoteUndo + '|' + tool.renderMarkdown(continuousDemoteHistoryModel), '##### A|###### A');
+  var demoteBoundaryHistorySize = continuousDemoteHistory.undo.length;
+  ok('V7-25: H6 toolbar no-op does not add history',
+    !continuousHistoryStep(continuousDemoteHistory, continuousDemoteHistoryModel, function () {
+      return tool.shiftSelectedSource(continuousDemoteHistoryModel, 1);
+    }) && continuousDemoteHistory.undo.length === demoteBoundaryHistorySize);
+  var rowH6Boundary = tool.createState('###### Root\n###### Stop');
+  ok('V7-26: Tree row Demote at a complete H6 boundary is a stable no-op',
+    !tool.changeSubtree(rowH6Boundary, 0, 1) && tool.renderMarkdown(rowH6Boundary) === '###### Root\n###### Stop');
+
+  var h1Trunks = tool.localBranchTrunkStates([1, 2, 2]);
+  ok('W1: H1 keeps its main trunk without a duplicate local trunk',
+    !h1Trunks[0].rootStarts && h1Trunks[1].ancestorAxis === null && h1Trunks[2].ancestorAxis === null);
+
+  var h2Trunks = tool.localBranchTrunkStates([2, 3, 3]);
+  ok('W2: a top-level H2 with descendants starts a local trunk',
+    h2Trunks[0].rootStarts && h2Trunks[1].ancestorAxis === 1 && h2Trunks[2].ancestorAxis === 1);
+
+  var h3Trunks = tool.localBranchTrunkStates([3, 4, 4]);
+  ok('W3: local root detection is not hard-coded to H2',
+    h3Trunks[0].rootStarts && h3Trunks[1].ancestorAxis === 2 && h3Trunks[2].ancestorAxis === 2);
+
+  var multipleLocalLevels = [2, 3, 2, 3];
+  var multipleLocalPaths = tool.ancestorPaths(multipleLocalLevels);
+  var multipleLocalTrunks = tool.localBranchTrunkStates(multipleLocalLevels, multipleLocalPaths);
+  var multipleLocalContinuations = tool.ancestorContinuations(multipleLocalPaths);
+  ok('W4: multiple top-level branches each start an independent local trunk',
+    multipleLocalTrunks[0].rootStarts && multipleLocalTrunks[2].rootStarts);
+  ok('W5: a local trunk ends before the next same-level branch',
+    !multipleLocalContinuations[1][1] && multipleLocalTrunks[3].ancestorAxis === 1);
+
+  var leafRoots = tool.localBranchTrunkStates([2, 2]);
+  ok('W6: roots without descendants do not receive decorative local trunks',
+    !leafRoots[0].rootStarts && !leafRoots[1].rootStarts);
+
+  var skippedLocalTrunks = tool.localBranchTrunkStates([2, 4]);
+  ok('W7: skipped levels retain the effective H2 ancestor as the local trunk axis',
+    skippedLocalTrunks[0].rootStarts && skippedLocalTrunks[1].ancestorAxis === 1);
+
+  var orphanLocalTrunks = tool.localBranchTrunkStates([4, 3, 4]);
+  ok('W8: an orphan deeper heading does not inherit a later independent branch',
+    !orphanLocalTrunks[0].rootStarts && orphanLocalTrunks[0].ancestorAxis === null &&
+    orphanLocalTrunks[1].rootStarts && orphanLocalTrunks[2].ancestorAxis === 2);
+
+  var beforeRootTrunks = tool.localBranchTrunkStates([1, 2]);
+  var afterRootTrunks = tool.localBranchTrunkStates([2, 3]);
+  ok('W9: Before H1 and After H2 resolve their trunk types independently',
+    !beforeRootTrunks[0].rootStarts && beforeRootTrunks[1].ancestorAxis === null &&
+    afterRootTrunks[0].rootStarts && afterRootTrunks[1].ancestorAxis === 1);
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');

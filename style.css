@@ -258,19 +258,21 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
 .outline-cell:first-child .path-dot.missing::before { background: var(--surface-before); }
 .outline-row:hover .path-dot.missing::before, .outline-row.is-hovered .path-dot.missing::before { background: #fff; }
 .path-dot::after { display: none; }
-.path-dot:first-child.present::after {
+.path-dot:first-child.present::after,
+.path-dot.local-trunk::after {
   position: absolute;
   z-index: 1;
   top: 0;
   bottom: 0;
-  left: calc(50% - var(--tree-connector-width) / 2);
+  left: var(--vertical-connector-left, calc(50% - var(--tree-connector-width) / 2));
   display: block;
-  width: var(--tree-connector-width);
+  width: var(--vertical-connector-width, var(--tree-connector-width));
   background: var(--tree-line);
   border-radius: var(--radius-pill);
   content: "";
 }
-.path-dot:first-child.present.path-ends::after { bottom: 50%; }
+.path-dot:first-child.present.path-ends::after,
+.path-dot.local-trunk.path-ends::after { bottom: 50%; }
 
 .current-axis {
   position: relative;
@@ -279,13 +281,14 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
   height: var(--tree-row-height);
 }
 
-.level-1 .current-axis.continues::before {
+.level-1 .current-axis.continues::before,
+.current-axis.local-trunk-root.continues::before {
   position: absolute;
   z-index: 0;
   top: 50%;
   bottom: 0;
-  left: calc(50% - var(--tree-connector-width) / 2);
-  width: var(--tree-connector-width);
+  left: var(--vertical-connector-left, calc(50% - var(--tree-connector-width) / 2));
+  width: var(--vertical-connector-width, var(--tree-connector-width));
   background: var(--tree-line);
   border-radius: var(--radius-pill);
   content: "";

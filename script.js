@@ -125,7 +125,9 @@ function adjustedLevelBeforeMapping(model, heading) {
 
 function headingMatchesSource(model, heading) {
   if (!hasSourceSelection(model)) return false;
-  if (model.mappingSourceMode === 'exact') return model.mappingHeadingIds.indexOf(heading.id) !== -1;
+  if (model.mappingSourceMode === 'exact' || model.mappingHeadingIds.length) {
+    return model.mappingHeadingIds.indexOf(heading.id) !== -1;
+  }
   if (model.mappingSourceMode === 'branch') {
     return getSubtreeHeadingIds(model, model.mappingBranchRootId).indexOf(heading.id) !== -1;
   }
@@ -362,7 +364,15 @@ function getSubtreeHeadingIds(model, headingId) {
 }
 
 function changeSubtree(model, headingId, delta) {
-  getSubtreeHeadingIds(model, headingId).forEach(function (id) { model.offsets[id] += delta; });
+  var ids = getSubtreeHeadingIds(model, headingId);
+  if (!ids.length) return false;
+  var before = JSON.stringify(renderResult(model));
+  ids.forEach(function (id) { model.offsets[id] += delta; });
+  if (JSON.stringify(renderResult(model)) === before) {
+    ids.forEach(function (id) { model.offsets[id] -= delta; });
+    return false;
+  }
+  return true;
 }
 
 function ancestorPaths(levels) {
@@ -380,6 +390,19 @@ function ancestorContinuations(paths) {
   return paths.map(function (path, rowIndex) {
     var nextPath = paths[rowIndex + 1] || [];
     return path.map(function (present, axisIndex) { return Boolean(present && nextPath[axisIndex]); });
+  });
+}
+
+function localBranchTrunkStates(levels, paths) {
+  var resolvedPaths = paths || ancestorPaths(levels);
+  return levels.map(function (level, rowIndex) {
+    var path = resolvedPaths[rowIndex] || [];
+    var firstAncestorAxis = path.indexOf(true);
+    var nextPath = resolvedPaths[rowIndex + 1] || [];
+    return {
+      rootStarts: level > 1 && firstAncestorAxis === -1 && Boolean(nextPath[level - 1]),
+      ancestorAxis: firstAncestorAxis > 0 ? firstAncestorAxis : null
+    };
   });
 }
 
@@ -414,7 +437,12 @@ function dynamicSourceLevels(model, range) {
 function selectedSourceCanShift(model, delta) {
   var ids = mappingAffectedHeadingIds(model);
   if (!ids.length) return false;
-  if (model.mappingSourceMode === 'branch') return true;
+  if (model.mappingSourceMode === 'branch') {
+    return ids.some(function (id) {
+      var level = adjustedLevelBeforeMapping(model, model.headings[id]);
+      return clampLevel(level + delta) !== level;
+    });
+  }
   return ids.every(function (id) {
     var shifted = adjustedLevelBeforeMapping(model, model.headings[id]) + delta;
     return shifted >= 1 && shifted <= 6;
@@ -423,9 +451,15 @@ function selectedSourceCanShift(model, delta) {
 
 function shiftSelectedSource(model, delta) {
   if (!selectedSourceCanShift(model, delta)) return false;
-  mappingAffectedHeadingIds(model).forEach(function (id) {
+  var ids = mappingAffectedHeadingIds(model);
+  ids.forEach(function (id) {
     model.offsets[id] += delta;
   });
+  if (model.mappingSourceMode !== 'exact' && model.mappingSourceMode !== 'branch') {
+    model.mappingHeadingIds = ids.slice();
+    model.mappingHeadingId = ids.length === 1 ? ids[0] : null;
+    model.mappingSource = clampLevel(model.mappingSource + delta);
+  }
   model.mappingTarget = null;
   model.mappingPreset = null;
   return true;
@@ -1102,6 +1136,7 @@ var HeadingTool = {
   changeSubtree: changeSubtree,
   ancestorPaths: ancestorPaths,
   ancestorContinuations: ancestorContinuations,
+  localBranchTrunkStates: localBranchTrunkStates,
   findRisks: findRisks,
   findBodyConversionRisks: findBodyConversionRisks,
   dynamicSourceLevels: dynamicSourceLevels,
@@ -1357,16 +1392,35 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     });
   }
 
-  function renderPath(path, continuations) {
+  function snapVerticalConnectors() {
+    var ratio = window.devicePixelRatio || 1;
+    var physicalThickness = Math.max(1, Math.round(2 * ratio));
+    var cssThickness = physicalThickness / ratio;
+    var selector = [
+      '.path-dot:first-child.present',
+      '.path-dot.local-trunk',
+      '.level-1 .current-axis.continues',
+      '.current-axis.local-trunk-root.continues'
+    ].join(', ');
+    Array.prototype.forEach.call(structure.querySelectorAll(selector), function (axis) {
+      var rect = axis.getBoundingClientRect();
+      var leftDevicePixel = Math.round((rect.left + rect.width / 2) * ratio - physicalThickness / 2);
+      axis.style.setProperty('--vertical-connector-left', (leftDevicePixel / ratio - rect.left) + 'px');
+      axis.style.setProperty('--vertical-connector-width', cssThickness + 'px');
+    });
+  }
+
+  function renderPath(path, continuations, localTrunkAxis) {
     return '<span class="dot-path" style="--path-count:' + path.length + '" aria-label="' +
       path.map(function (present, index) { return 'H' + (index + 1) + (present ? ' present' : ' missing'); }).join(', ') +
       '">' + path.map(function (present, index) {
         return '<span class="path-dot ' + (present ? 'present' : 'missing') +
+          (index === localTrunkAxis ? ' local-trunk' : '') +
           (continuations[index] ? ' path-continues' : ' path-ends') + '">' + (present ? '●' : '○') + '</span>';
       }).join('') + '</span>';
   }
 
-  function outlineCell(text, level, path, continuations, changed, headingId, actionsEnabled, impactClass, continues, sourceActionsEnabled, selectionClass) {
+  function outlineCell(text, level, path, continuations, trunkState, changed, headingId, actionsEnabled, impactClass, continues, sourceActionsEnabled, selectionClass) {
     var actions = actionsEnabled
       ? '<span class="branch-actions"><button type="button" data-action="subtree-up" data-heading-id="' + headingId +
         '" title="Promote this heading and branch" aria-label="Promote this heading and branch">↑</button>' +
@@ -1389,8 +1443,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       (selectionClass ? ' source-selected ' + selectionClass : '') +
       (impactClass ? ' ' + impactClass : '') + '"><div class="outline-node" style="--path-count:' +
       path.length + '"><span class="horizontal-connector" aria-hidden="true"></span>' +
-      renderPath(path, continuations) +
-      '<span class="current-axis' + (continues ? ' continues' : '') + '" aria-hidden="true">' +
+      renderPath(path, continuations, trunkState.ancestorAxis) +
+      '<span class="current-axis' + (trunkState.rootStarts ? ' local-trunk-root' : '') +
+      (continues ? ' continues' : '') + '" aria-hidden="true">' +
       '<span class="current-node"></span></span>' +
       '<span class="outline-text" title="' + text + '">' + text + '</span>' +
       '<span class="level-name">H' + level + '</span>' + sourceActions + actions + '</div></div>';
@@ -1481,12 +1536,19 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       var remaining = state.headings.filter(function (heading) { return !headingConvertsToBody(state, heading); });
       var beforePaths = ancestorPaths(state.headings.map(function (heading) { return heading.level; }));
       var beforeContinuations = ancestorContinuations(beforePaths);
+      var beforeTrunks = localBranchTrunkStates(state.headings.map(function (heading) { return heading.level; }), beforePaths);
       var remainingPaths = ancestorPaths(remaining.map(function (heading) { return targetLevel(state, heading); }));
       var remainingContinuations = ancestorContinuations(remainingPaths);
+      var remainingTrunks = localBranchTrunkStates(remaining.map(function (heading) { return targetLevel(state, heading); }), remainingPaths);
       var selectedHeadingIds = mappingAffectedHeadingIds(state);
       var afterPathById = {};
       remaining.forEach(function (heading, index) {
-        afterPathById[heading.id] = { path: remainingPaths[index], continuation: remainingContinuations[index], index: index };
+        afterPathById[heading.id] = {
+          path: remainingPaths[index],
+          continuation: remainingContinuations[index],
+          trunk: remainingTrunks[index],
+          index: index
+        };
       });
       structure.innerHTML = '<ol class="outline-rows">' + state.headings.map(function (heading, index) {
           var affected = lastImpact && lastImpact.ids.indexOf(heading.id) !== -1;
@@ -1502,7 +1564,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
             !previousSelected ? 'selected-start' : !nextSelected ? 'selected-end' : 'selected-middle';
           var beforeContinues = Boolean(beforePaths[index + 1] && beforePaths[index + 1][heading.level - 1]);
           var before = outlineCell(escapeHtml(heading.text || '(Untitled)'), heading.level, beforePaths[index],
-            beforeContinuations[index], false, heading.id, false, beforeImpact, beforeContinues, false, selectionClass);
+            beforeContinuations[index], beforeTrunks[index], false, heading.id, false, beforeImpact, beforeContinues, false, selectionClass);
           if (headingConvertsToBody(state, heading)) {
             return '<li class="outline-row' + (heading.level === 1 ? ' h1-branch-start' : '') +
               '" data-heading-id="' + heading.id + '">' + before + bodyGhostHtml(heading, afterImpact, selectionClass) + '</li>';
@@ -1513,10 +1575,11 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
           var afterContinues = Boolean(nextRemaining && info.path && afterPathById[nextRemaining.id].path[target - 1]);
           return '<li class="outline-row' + (heading.level === 1 ? ' h1-branch-start' : '') +
             '" data-heading-id="' + heading.id + '">' + before + outlineCell(escapeHtml(heading.text || '(Untitled)'), target, info.path, info.continuation,
-              target !== heading.level, heading.id, true, afterImpact, afterContinues, true, selectionClass) + '</li>';
+              info.trunk, target !== heading.level, heading.id, true, afterImpact, afterContinues, true, selectionClass) + '</li>';
         }).join('') + '</ol>';
     }
     snapHorizontalConnectors();
+    snapVerticalConnectors();
     var inversionRisks = findRisks(state);
     var bodyRisks = findBodyConversionRisks(state);
     var messages = [];
@@ -1733,9 +1796,15 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     if (button.dataset.action !== 'subtree-up' && button.dataset.action !== 'subtree-down') return;
     var delta = button.dataset.action === 'subtree-up' ? -1 : 1;
     var ids = getSubtreeHeadingIds(state, headingId);
-    performStateMutation(function () {
+    var changed = performStateMutation(function () {
       changeSubtree(state, headingId, delta);
     }, false);
+    if (!changed) {
+      clearImpact();
+      render();
+      setStatus('This branch is already at the heading boundary');
+      return;
+    }
     setImpact('subtree', ids);
     render();
     setStatus('Changed “' + (state.headings[headingId].text || 'Untitled') + '” and its branch ' +
@@ -1772,7 +1841,8 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   sourceUpButton.addEventListener('click', function () {
     if (sourceUpButton.disabled) return;
     var ids = mappingAffectedHeadingIds(state);
-    performStateMutation(function () { shiftSelectedSource(state, -1); }, false);
+    var changed = performStateMutation(function () { shiftSelectedSource(state, -1); }, false);
+    if (!changed) return;
     setImpact('source-shift', ids);
     render();
     setStatus('Promoted the current source one level');
@@ -1781,7 +1851,8 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   sourceDownButton.addEventListener('click', function () {
     if (sourceDownButton.disabled) return;
     var ids = mappingAffectedHeadingIds(state);
-    performStateMutation(function () { shiftSelectedSource(state, 1); }, false);
+    var changed = performStateMutation(function () { shiftSelectedSource(state, 1); }, false);
+    if (!changed) return;
     setImpact('source-shift', ids);
     render();
     setStatus('Demoted the current source one level');
