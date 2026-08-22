@@ -214,13 +214,13 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
   z-index: 0;
   top: calc(50% - var(--tree-connector-width) / 2);
   left: calc(var(--tree-level-step) / 2);
-  width: calc(var(--path-count, 0) * var(--tree-level-step) + 16px);
+  width: calc(var(--path-count, 0) * var(--tree-level-step));
   height: var(--tree-connector-width);
   border-radius: 0 var(--radius-pill) var(--radius-pill) 0;
   background: var(--tree-line);
   pointer-events: none;
 }
-.level-1 .horizontal-connector { width: 18px; }
+.level-1 .horizontal-connector { width: 0; }
 
 .dot-path {
   position: relative;
@@ -306,7 +306,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
 
 .outline-text {
   min-width: 0;
-  margin-left: 12px;
+  margin-left: 4px;
   overflow: hidden;
   color: #39414c;
   font-size: .82rem;
