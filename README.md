@@ -4,7 +4,7 @@
 
 MD Outline Tidy 是一款桌面优先、可直接在浏览器中打开的 Markdown 标题结构整理工具，主要用于把 ChatGPT 长回答的标题层级整理清晰，并复制富文本到 Yuque 等笔记工具。无需安装、无需构建。
 
-正式网页入口：待仓库重命名及 GitHub Pages 部署完成后，填写实际访问验证通过的地址。
+正式网页入口：[MD Outline Tidy](https://shallichan.github.io/md-outline-tidy/)。
 
 它是一款聚焦真实工作流的效率工具，不是通用 Markdown 编辑器、完整的 Markdown / GFM 实现，也不以源代码编辑为主要目标。项目仅使用 HTML、CSS 和 Vanilla JavaScript，无需 Node、框架、构建步骤或外部依赖。
 
