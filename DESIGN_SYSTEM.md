@@ -1,9 +1,9 @@
-# Markdown Tool Design System
+# MD Outline Tidy Design System
 
 版本：V0.1  
 状态：当前已验证设计基线
 
-本文档记录 `markdown-heading-tool` 当前已经实际实现、经过浏览器使用和人工验收后确认有效的视觉与交互规则。
+本文档记录 MD Outline Tidy 当前已经实际实现、经过浏览器使用和人工验收后确认有效的视觉与交互规则。
 
 它是一份持续迭代的工作文档，不是永久不变的规范。
 
@@ -15,7 +15,7 @@
 
 # 1. 设计定位
 
-Markdown Tool 是一个轻量桌面生产力工具。
+MD Outline Tidy 是一个轻量桌面生产力工具。
 
 整体界面应当给人的感觉是：
 
@@ -70,7 +70,7 @@ Markdown Tool 是一个轻量桌面生产力工具。
 - Radius
 - Panel
 
-## 2.2 Markdown Tool 专属规则
+## 2.2 MD Outline Tidy 专属规则
 
 只属于当前产品：
 
@@ -1156,7 +1156,7 @@ Motion 必须帮助理解结构变化，而不是为了“显得高级”。
 - Missing Level
 - Branch Selection
 
-这些属于 Markdown Tool 的产品专属模式。
+这些属于 MD Outline Tidy 的产品专属模式。
 
 只有当一条规则已经在多个真实项目中成功使用后，才考虑将其升级为：
 

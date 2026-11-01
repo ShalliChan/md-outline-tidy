@@ -1,6 +1,10 @@
-# Markdown Tool_V3.1
+# MD Outline Tidy
 
-Markdown Tool_V3.1 是一款桌面优先、可直接在浏览器中打开的 Markdown 结构整理工具，主要用于把 ChatGPT 的长回答整理成结构清晰、适合粘贴到 Yuque 的富文本。
+当前版本：**v3.1**。
+
+MD Outline Tidy 是一款桌面优先、可直接在浏览器中打开的 Markdown 标题结构整理工具，主要用于把 ChatGPT 长回答的标题层级整理清晰，并复制富文本到 Yuque 等笔记工具。无需安装、无需构建。
+
+正式网页入口：待仓库重命名及 GitHub Pages 部署完成后，填写实际访问验证通过的地址。
 
 它是一款聚焦真实工作流的效率工具，不是通用 Markdown 编辑器、完整的 Markdown / GFM 实现，也不以源代码编辑为主要目标。项目仅使用 HTML、CSS 和 Vanilla JavaScript，无需 Node、框架、构建步骤或外部依赖。
 
@@ -234,7 +238,7 @@ Input Markdown 与当前 Result Preview 支持双向比例滚动，方便进行�
 打开 `test.html` 可运行浏览器回归测试。当前自动测试基线为：
 
 ```text
-270 / 270 passed
+305 / 305 passed
 ```
 
 具体回归测试由 `TEST_CASES.md` 和 `tests.js` 维护；稳定的视觉基础由 `DESIGN_SYSTEM.md` 维护。
