@@ -132,6 +132,7 @@ function headingMatchesSource(model, heading) {
     return getSubtreeHeadingIds(model, model.mappingBranchRootId).indexOf(heading.id) !== -1;
   }
   if (!model.mappingRange || !headingInRange(heading, model.mappingRange)) return false;
+  if (model.mappingSourceMode === 'all') return true;
   if (model.mappingSourceMode === 'and-below') {
     return branchSourceHeadingIds(model).indexOf(heading.id) !== -1;
   }
@@ -269,7 +270,8 @@ function setMappingChoice(model, side, value, range) {
 }
 
 function setSourceChoice(model, level, mode, range) {
-  var normalizedMode = mode === 'and-below' ? 'and-below' : 'single';
+  var normalizedMode = mode === 'all' ? 'all' : mode === 'and-below' ? 'and-below' : 'single';
+  if (normalizedMode === 'all') level = 'all';
   var isActive = model.mappingSource === level && model.mappingSourceMode === normalizedMode;
   model.mappingSource = isActive ? null : level;
   model.mappingSourceMode = normalizedMode;
@@ -277,6 +279,10 @@ function setSourceChoice(model, level, mode, range) {
   model.mappingHeadingIds = [];
   model.mappingBranchRootId = null;
   model.mappingRange = range;
+  if (normalizedMode === 'all') {
+    model.mappingTarget = null;
+    model.mappingPreset = null;
+  }
 }
 
 function setExactSourceChoice(model, headingId, range) {
@@ -458,7 +464,7 @@ function shiftSelectedSource(model, delta) {
   if (model.mappingSourceMode !== 'exact' && model.mappingSourceMode !== 'branch') {
     model.mappingHeadingIds = ids.slice();
     model.mappingHeadingId = ids.length === 1 ? ids[0] : null;
-    model.mappingSource = clampLevel(model.mappingSource + delta);
+    if (model.mappingSourceMode !== 'all') model.mappingSource = clampLevel(model.mappingSource + delta);
   }
   model.mappingTarget = null;
   model.mappingPreset = null;
@@ -1197,6 +1203,7 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   var presetTargets = document.getElementById('preset-targets');
   var presetEditor = document.getElementById('preset-editor');
   var lowestButton = document.getElementById('lowest-level');
+  var allLevelsButton = document.getElementById('all-levels');
   var sourceUpButton = document.getElementById('source-up-button');
   var sourceDownButton = document.getElementById('source-down-button');
   var undoButton = document.getElementById('undo-button');
@@ -1496,6 +1503,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
       button.setAttribute('aria-pressed', String(selected));
     });
     var dynamic = dynamicSourceLevels(state, currentRange());
+    allLevelsButton.disabled = dynamic.lowest === null;
+    allLevelsButton.classList.toggle('active', state.mappingSourceMode === 'all' && hasSourceSelection(state));
+    allLevelsButton.setAttribute('aria-pressed', String(state.mappingSourceMode === 'all' && hasSourceSelection(state)));
     lowestButton.disabled = dynamic.lowest === null;
     lowestButton.dataset.level = dynamic.lowest === null ? '' : dynamic.lowest;
     lowestButton.textContent = dynamic.lowest === null ? 'Minimum Level' : 'Minimum Level H' + dynamic.lowest;
@@ -1506,7 +1516,9 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
     updateHistoryControls();
     renderPresetControls();
     var sourceLabel = '';
-    if (state.mappingSourceMode === 'exact' && state.mappingHeadingIds.length) {
+    if (state.mappingSourceMode === 'all' && hasSourceSelection(state)) {
+      sourceLabel = 'All Levels';
+    } else if (state.mappingSourceMode === 'exact' && state.mappingHeadingIds.length) {
       sourceLabel = 'Selected ' + state.mappingHeadingIds.length +
         (state.mappingHeadingIds.length === 1 ? ' heading' : ' headings');
     } else if (state.mappingSourceMode === 'branch' && state.mappingBranchRootId !== null) {
@@ -1739,6 +1751,10 @@ if (typeof document !== 'undefined' && document.getElementById('markdown-input')
   lowestButton.addEventListener('click', function () {
     if (lowestButton.disabled || !lowestButton.dataset.level) return;
     chooseSource(Number(lowestButton.dataset.level), 'single');
+  });
+  allLevelsButton.addEventListener('click', function () {
+    if (allLevelsButton.disabled) return;
+    chooseSource('all', 'all');
   });
 
   targetLevels.addEventListener('click', function (event) {

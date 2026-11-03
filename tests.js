@@ -1078,6 +1078,73 @@
   ok('W9: Before H1 and After H2 resolve their trunk types independently',
     !beforeRootTrunks[0].rootStarts && beforeRootTrunks[1].ancestorAxis === null &&
     afterRootTrunks[0].rootStarts && afterRootTrunks[1].ancestorAxis === 1);
+  var allLevels = tool.createState('# A\n## B\n### C\n#### D\n##### E\n###### F');
+  tool.setSourceChoice(allLevels, null, 'all', full(allLevels));
+  deepEqual('All-1: selects every H1 through H6', tool.mappingAffectedHeadingIds(allLevels), [0, 1, 2, 3, 4, 5]);
+  equal('All-2: choosing source alone preserves Result', tool.renderMarkdown(allLevels), allLevels.original);
+  var allBeforeBoundary = JSON.stringify(allLevels);
+  ok('All-3: H1 blocks overall Promote', !tool.shiftSelectedSource(allLevels, -1));
+  ok('All-4: H6 blocks overall Demote', !tool.shiftSelectedSource(allLevels, 1));
+  equal('All-5: blocked shifts preserve complete state', JSON.stringify(allLevels), allBeforeBoundary);
+
+  var allOrphans = tool.createState('##### Orphan\n### Root\n#### Child\nBody\n```md\n# Fake\n```\n~~~\n## Fake too\n~~~');
+  tool.setSourceChoice(allOrphans, null, 'all', full(allOrphans));
+  deepEqual('All-6: missing H1 and orphan H3/H4/H5 remain selectable, fences excluded', tool.mappingAffectedHeadingIds(allOrphans), [0, 1, 2]);
+  var allRange = { start: allOrphans.baseline.indexOf('### Root'), end: allOrphans.baseline.indexOf('Body') };
+  tool.setSourceChoice(allOrphans, 3, 'single', full(allOrphans));
+  tool.setSourceChoice(allOrphans, null, 'all', allRange);
+  deepEqual('All-7: text selection restricts headings', tool.mappingAffectedHeadingIds(allOrphans), [1, 2]);
+  tool.setSourceChoice(allOrphans, null, 'all', allRange);
+  ok('All-8: repeated shortcut cancels source', !tool.hasSourceSelection(allOrphans));
+  tool.setSourceChoice(allOrphans, null, 'all', { start: allRange.start + 1, end: allRange.end });
+  deepEqual('All-9: partial marker follows existing range rule', tool.mappingAffectedHeadingIds(allOrphans), [2]);
+
+  var allContinuous = tool.createState('### A\n##### B\n## C');
+  tool.setSourceChoice(allContinuous, null, 'all', full(allContinuous));
+  var allHistory = tool.createHistory(50);
+  [-1, -1, 1].forEach(function (delta) {
+    continuousHistoryStep(allHistory, allContinuous, function () { return tool.shiftSelectedSource(allContinuous, delta); });
+  });
+  // The second Promote is blocked by C at H1, so only the effective shifts enter history.
+  equal('All-10: mixed boundary sequence preserves relative levels', tool.renderMarkdown(allContinuous), allContinuous.original);
+  equal('All-11: only effective operations enter history', allHistory.undo.length, 2);
+  deepEqual('All-12: logical IDs survive direction changes', allContinuous.mappingHeadingIds, [0, 1, 2]);
+
+  var allSequence = tool.createState('### A\n#### B');
+  tool.setSourceChoice(allSequence, null, 'all', full(allSequence));
+  var allSequenceHistory = tool.createHistory(50);
+  [-1, -1, 1].forEach(function (delta) {
+    continuousHistoryStep(allSequenceHistory, allSequence, function () { return tool.shiftSelectedSource(allSequence, delta); });
+  });
+  equal('All-13: Promote Promote Demote', tool.renderMarkdown(allSequence), '## A\n### B');
+  equal('All-14: three effective shifts create three steps', allSequenceHistory.undo.length, 3);
+  equal('All-15: shifts retain Baseline until Continue', allSequence.baseline, allSequence.original);
+  tool.undoHistory(allSequenceHistory, allSequence);
+  equal('All-16: Undo restores previous shift', tool.renderMarkdown(allSequence), '# A\n## B');
+  tool.redoHistory(allSequenceHistory, allSequence);
+  equal('All-17: Redo restores shift and tracking', tool.renderMarkdown(allSequence), '## A\n### B');
+  deepEqual('All-18: Redo retains all selected IDs', tool.mappingAffectedHeadingIds(allSequence), [0, 1]);
+  tool.commitResult(allSequence);
+  ok('All-19: Continue establishes Result and clears selection tracking', allSequence.baseline === '## A\n### B' && !tool.hasSourceSelection(allSequence) && !allSequence.mappingHeadingIds.length);
+  tool.setSourceChoice(allSequence, null, 'all', full(allSequence));
+  tool.shiftSelectedSource(allSequence, 1);
+  tool.resetTransformations(allSequence);
+  ok('All-20: Reset restores Original and clears tracking', tool.renderMarkdown(allSequence) === allSequence.original && !tool.hasSourceSelection(allSequence) && !allSequence.mappingHeadingIds.length);
+
+  tool.setSourceChoice(allSequence, null, 'all', full(allSequence));
+  tool.shiftSelectedSource(allSequence, -1);
+  tool.setSourceChoice(allSequence, 3, 'single', full(allSequence));
+  deepEqual('All-21: switching to Hn clears old IDs', tool.mappingAffectedHeadingIds(allSequence), [1]);
+  ok('All-22: Hn tracking storage cleared', !allSequence.mappingHeadingIds.length);
+  tool.setSourceChoice(allSequence, 2, 'and-below', full(allSequence));
+  deepEqual('All-23: Hn+ branch selection after All Levels', tool.mappingAffectedHeadingIds(allSequence), [0, 1]);
+  var allMinimum = tool.dynamicSourceLevels(allSequence, full(allSequence)).lowest;
+  tool.setSourceChoice(allSequence, allMinimum, 'single', full(allSequence));
+  deepEqual('All-24: Minimum Level retains existing selection', tool.mappingAffectedHeadingIds(allSequence), [1]);
+  allSequence.mappingTarget = 1;
+  tool.setSourceChoice(allSequence, null, 'all', full(allSequence));
+  ok('All-25: All Levels clears pending target without converting', !tool.mappingIsActive(allSequence) && tool.renderMarkdown(allSequence) === '## A\n### B');
+
   var list = document.getElementById('results');
   results.forEach(function (result) {
     var item = document.createElement('li');

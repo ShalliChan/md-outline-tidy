@@ -112,7 +112,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, summary:focus
 .source-level-pair button:last-child.active { color: var(--color-accent); }
 .target-levels { gap: 5px; }
 .target-levels button { flex: 1 1 0; min-width: 36px; }
-.quick-source-strip { margin-top: 1px; }
+.quick-source-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 1px; }
 .quick-source-strip button { min-width: 132px; text-align: left; }
 .preset-targets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
 .preset-targets button:nth-child(2), .preset-targets button:nth-child(4) { font-weight: 700; }
